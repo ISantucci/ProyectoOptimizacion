@@ -53,7 +53,7 @@ namespace OptimizationGame.Core
             _playerModel.Position = _playerTransform.position;
 
             _playerSystem = new PlayerSystem(_playerModel, playerConfig);
-            _enemySystem = new EnemySystem(new EnemyTypeData());
+            _enemySystem = new EnemySystem(new EnemyTypeData(), () => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
             _waveSystem = new WaveSystem(new WaveConfig(), totalWaves: 5);
             _combatSystem = new CombatSystem();
@@ -144,7 +144,7 @@ namespace OptimizationGame.Core
 
                 if (_projectileSystem.Projectiles.Contains(projectile))
                 {
-                    if (!projectile.HasReachedMaxDistance)
+                    if (projectile.HasReachedMaxDistance)
                     {
                         if (_projectileViews.ContainsKey(projectile))
                         {

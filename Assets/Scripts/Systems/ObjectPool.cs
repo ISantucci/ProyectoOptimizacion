@@ -33,7 +33,8 @@ namespace OptimizationGame.Systems
                 var view = instance.GetComponent<EntityView>();
                 if (view != null)
                 {
-                    instance.SetActive(false);
+                    var poolable = view as IPoolable;
+                    poolable?.OnDespawned();
                     queue.Enqueue(view);
                 }
             }
