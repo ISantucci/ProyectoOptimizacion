@@ -14,8 +14,8 @@ namespace OptimizationGame.Systems
         private int _nextEnemyId;
         private Func<Vector3> _getTargetPosition;
 
-        private const float SeparationDistance = 3f;
-        private const float SeparationWeight = 0.5f;
+        private const float SeparationDistance = 4.5f;
+        private const float SeparationWeight = 0.7f;
 
         public List<EnemyModel> Enemies => _enemies;
 
@@ -83,19 +83,37 @@ namespace OptimizationGame.Systems
 
             for (int i = 0; i < _enemies.Count; i++)
             {
-                if (i == _enemies.IndexOf(enemy))
+                EnemyModel other = _enemies[i];
+
+                // Ignorar a sí mismo
+                if (ReferenceEquals(enemy, other))
                     continue;
 
-                EnemyModel other = _enemies[i];
+                // Ignorar enemigos muertos
                 if (!other.IsAlive)
                     continue;
 
-                float distToOther = Vector3.Distance(enemy.Position, other.Position);
+                Vector3 diff = enemy.Position - other.Position;
+                float distToOther = diff.magnitude;
 
-                if (distToOther < SeparationDistance && distToOther > 0.01f)
+                // Si está dentro del radio de separación
+                if (distToOther < SeparationDistance && distToOther > 0.001f)
                 {
-                    Vector3 awayFromOther = (enemy.Position - other.Position).normalized;
+                    // Fuerza proporcional: más cerca = más fuerte
+                    // Escala de 0 (máxima cercanía) a 1 (límite del radio)
+                    float strength = 1f - (distToOther / SeparationDistance);
+
+                    // Normalizar dirección y aplicar fuerza proporcional
+                    Vector3 awayFromOther = (diff / distToOther) * strength;
                     separationForce += awayFromOther;
+                }
+                else if (distToOther <= 0.001f)
+                {
+                    // Si están casi exactamente en la misma posición, usar dirección estable basada en ID
+                    // Evita jitter y NaN
+                    Vector3 fallbackDirection = Vector3.right * ((enemy.ID * 73) % 100) * 0.01f +
+                                               Vector3.forward * ((enemy.ID * 131) % 100) * 0.01f;
+                    separationForce += fallbackDirection.normalized;
                 }
             }
 
