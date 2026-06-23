@@ -127,33 +127,37 @@ namespace OptimizationGame.Core
             for (int i = _projectileSystem.Projectiles.Count - 1; i >= 0; i--)
             {
                 var projectile = _projectileSystem.Projectiles[i];
+                bool projectileHit = false;
 
                 for (int j = _enemySystem.Enemies.Count - 1; j >= 0; j--)
                 {
                     var enemy = _enemySystem.Enemies[j];
-                    _combatSystem.ResolveProjectileEnemyCollision(projectile, enemy);
+                    bool hit = _combatSystem.ResolveProjectileEnemyCollision(projectile, enemy);
 
                     if (!enemy.IsAlive && _enemyViews.ContainsKey(enemy))
                     {
-                        var view = _enemyViews[enemy];
-                        _objectPool.Despawn("Enemy", view);
+                        var enemyView = _enemyViews[enemy];
+                        _objectPool.Despawn("Enemy", enemyView);
                         _enemyViews.Remove(enemy);
                         _enemySystem.RemoveEnemy(enemy);
                     }
+
+                    if (hit)
+                    {
+                        projectileHit = true;
+                        break;
+                    }
                 }
 
-                if (_projectileSystem.Projectiles.Contains(projectile))
+                if (projectileHit || projectile.HasReachedMaxDistance)
                 {
-                    if (projectile.HasReachedMaxDistance)
+                    if (_projectileViews.ContainsKey(projectile))
                     {
-                        if (_projectileViews.ContainsKey(projectile))
-                        {
-                            var view = _projectileViews[projectile];
-                            _objectPool.Despawn("Projectile", view);
-                            _projectileViews.Remove(projectile);
-                        }
-                        _projectileSystem.RemoveProjectile(projectile);
+                        var projectileView = _projectileViews[projectile];
+                        _objectPool.Despawn("Projectile", projectileView);
+                        _projectileViews.Remove(projectile);
                     }
+                    _projectileSystem.RemoveProjectile(projectile);
                 }
             }
 
