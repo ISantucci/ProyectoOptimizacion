@@ -48,18 +48,14 @@ namespace OptimizationGame.Systems
         {
             Vector3 targetPosition = _getTargetPosition();
 
-            for (int i = _enemies.Count - 1; i >= 0; i--)
+            for (int i = 0; i < _enemies.Count; i++)
             {
                 var enemy = _enemies[i];
 
                 if (!enemy.IsAlive)
-                {
-                    _enemies.RemoveAt(i);
-                }
-                else
-                {
-                    MoveTowardTargetWithSeparation(enemy, targetPosition, deltaTime);
-                }
+                    continue;
+
+                MoveTowardTargetWithSeparation(enemy, targetPosition, deltaTime);
             }
         }
 

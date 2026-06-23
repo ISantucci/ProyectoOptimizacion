@@ -30,16 +30,11 @@ namespace OptimizationGame.Systems
 
         public void Tick(float deltaTime)
         {
-            for (int i = _projectiles.Count - 1; i >= 0; i--)
+            for (int i = 0; i < _projectiles.Count; i++)
             {
                 var projectile = _projectiles[i];
                 projectile.Position += projectile.Direction * projectile.Speed * deltaTime;
                 projectile.TraveledDistance += projectile.Speed * deltaTime;
-
-                if (projectile.HasReachedMaxDistance)
-                {
-                    _projectiles.RemoveAt(i);
-                }
             }
         }
 
