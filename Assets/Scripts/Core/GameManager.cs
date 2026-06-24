@@ -13,6 +13,7 @@ namespace OptimizationGame.Core
         [SerializeField] private GameObject _enemyPrefab;
         [SerializeField] private GameObject _projectilePrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
+        [SerializeField] private EnemyTypeData _defaultEnemyType;
 
         private PlayerSystem _playerSystem;
         private EnemySystem _enemySystem;
@@ -43,6 +44,9 @@ namespace OptimizationGame.Core
 
         private void Start()
         {
+            if (_defaultEnemyType == null)
+                Debug.LogError("GameManager missing default EnemyTypeData reference.");
+
             _waveSystem.StartWaves();
         }
 
@@ -53,7 +57,7 @@ namespace OptimizationGame.Core
             _playerModel.Position = _playerTransform.position;
 
             _playerSystem = new PlayerSystem(_playerModel, playerConfig);
-            _enemySystem = new EnemySystem(new EnemyTypeData(), () => _playerModel.Position);
+            _enemySystem = new EnemySystem(() => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
             _waveSystem = new WaveSystem(new WaveConfig(), totalWaves: 5);
             _combatSystem = new CombatSystem();
@@ -104,7 +108,7 @@ namespace OptimizationGame.Core
 
         private void SpawnEnemy()
         {
-            if (_spawnPoints.Count == 0)
+            if (_spawnPoints.Count == 0 || _defaultEnemyType == null)
                 return;
 
             var spawnPoint = _spawnPoints[_nextSpawnPointIndex % _spawnPoints.Count];
@@ -114,7 +118,7 @@ namespace OptimizationGame.Core
             Vector3 spawnPosition = spawnPoint.position;
             spawnPosition.y = _playerModel.Position.y;
 
-            var enemyModel = _enemySystem.CreateEnemy();
+            var enemyModel = _enemySystem.CreateEnemy(_defaultEnemyType);
             enemyModel.Position = spawnPosition;
 
             var view = _objectPool.Spawn("Enemy", spawnPosition);

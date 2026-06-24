@@ -10,7 +10,6 @@ namespace OptimizationGame.Systems
     public class EnemySystem : ITickable
     {
         private List<EnemyModel> _enemies;
-        private EnemyTypeData _config;
         private int _nextEnemyId;
         private Func<Vector3> _getTargetPosition;
 
@@ -19,22 +18,16 @@ namespace OptimizationGame.Systems
 
         public List<EnemyModel> Enemies => _enemies;
 
-        public EnemySystem(EnemyTypeData config, Func<Vector3> getTargetPosition)
+        public EnemySystem(Func<Vector3> getTargetPosition)
         {
-            _config = config;
             _getTargetPosition = getTargetPosition;
             _enemies = new List<EnemyModel>();
             _nextEnemyId = 0;
         }
 
-        public EnemyModel CreateEnemy()
+        public EnemyModel CreateEnemy(EnemyTypeData enemyType)
         {
-            var enemy = new EnemyModel(
-                _nextEnemyId++,
-                _config.MaxHealth,
-                _config.MoveSpeed,
-                _config.Damage
-            );
+            var enemy = new EnemyModel(_nextEnemyId++, enemyType);
             _enemies.Add(enemy);
             return enemy;
         }
@@ -63,7 +56,7 @@ namespace OptimizationGame.Systems
         {
             float distance = Vector3.Distance(enemy.Position, targetPosition);
 
-            if (distance > _config.StoppingDistance)
+            if (distance > enemy.StoppingDistance)
             {
                 Vector3 toTarget = targetPosition - enemy.Position;
                 toTarget.y = 0f; // movimiento sólo en plano XZ
