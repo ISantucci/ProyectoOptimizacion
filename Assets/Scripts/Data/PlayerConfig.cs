@@ -6,7 +6,7 @@ namespace OptimizationGame.Data
         public float MoveSpeed = 15f;
         public float ProjectileSpeed = 50f;
         public float ProjectileDamage = 10f;
-        public float ProjectileMaxDistance = 100f;
+        public float ProjectileMaxDistance = 25f;
         public float FireCooldown = 0.1f;
     }
 }

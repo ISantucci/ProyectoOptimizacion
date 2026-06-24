@@ -121,6 +121,18 @@ namespace OptimizationGame.Systems
             MoveTowardTargetWithSeparation(enemy, targetPosition, deltaTime);
         }
 
-        public int AliveCount => _enemies.Count;
+        public int AliveCount
+        {
+            get
+            {
+                int count = 0;
+                for (int i = 0; i < _enemies.Count; i++)
+                {
+                    if (_enemies[i].IsAlive)
+                        count++;
+                }
+                return count;
+            }
+        }
     }
 }

@@ -1,95 +1,129 @@
+using System.Collections.Generic;
 using OptimizationGame.Data;
 using OptimizationGame.Interfaces;
-using UnityEngine;
 
 namespace OptimizationGame.Systems
 {
+    /// <summary>
+    /// Sabe QUÉ enemigos faltan en la room activa, wave por wave.
+    /// Data-driven desde RoomDefinition.Waves -> WaveEnemyEntry -> EnemyTypeData.
+    /// Clase pura. No conoce Transform, ObjectPool, EntityView ni GameManager.
+    /// No tiene lógica de spawn: solo decide cuándo/qué entregar.
+    /// </summary>
     public class WaveSystem : ITickable
     {
-        private WaveConfig _config;
-        private int _currentWave;
-        private int _totalWaves;
-        private int _enemiesSpawnedThisWave;
+        private RoomDefinition _room;
+        private int _waveIndex;
+        private bool _roomActive;
         private float _spawnTimer;
-        private float _waveDelayTimer;
-        private bool _waveActive;
-        private bool _allWavesCompleted;
 
-        public int CurrentWave => _currentWave;
-        public int TotalWaves => _totalWaves;
-        public bool WaveActive => _waveActive;
-        public bool AllWavesCompleted => _allWavesCompleted;
+        // Cola de enemigos pendientes de entregar en la wave actual.
+        private readonly Queue<EnemyTypeData> _pendingThisWave = new Queue<EnemyTypeData>();
 
-        public WaveSystem(WaveConfig config, int totalWaves = 5)
+        public int CurrentWaveIndex => _waveIndex;
+        public bool IsWaveComplete { get; private set; }
+        public bool IsRoomComplete { get; private set; }
+
+        private int WaveCount => (_room != null && _room.Waves != null) ? _room.Waves.Count : 0;
+
+        /// <summary>Arranca las waves de una room. Si la room no tiene waves, queda IsRoomComplete.</summary>
+        public void StartRoom(RoomDefinition room)
         {
-            _config = config;
-            _totalWaves = totalWaves;
-            _currentWave = 0;
-            _enemiesSpawnedThisWave = 0;
-            _spawnTimer = 0;
-            _waveDelayTimer = 0;
-            _waveActive = false;
-            _allWavesCompleted = false;
+            _room = room;
+            _waveIndex = -1;
+            _roomActive = room != null;
+            _spawnTimer = 0f;
+            IsRoomComplete = false;
+            IsWaveComplete = false;
+            _pendingThisWave.Clear();
+
+            if (WaveCount == 0)
+            {
+                _roomActive = false;
+                IsRoomComplete = true;
+                return;
+            }
+
+            AdvanceToNextWave();
         }
 
-        public void StartWaves()
+        private void AdvanceToNextWave()
         {
-            _currentWave = 1;
-            _waveActive = true;
-            _enemiesSpawnedThisWave = 0;
-            _spawnTimer = 0;
+            _waveIndex++;
+            _spawnTimer = 0f;
+            IsWaveComplete = false;
+            _pendingThisWave.Clear();
+
+            if (_waveIndex >= WaveCount)
+            {
+                _roomActive = false;
+                IsRoomComplete = true;
+                return;
+            }
+
+            var wave = _room.Waves[_waveIndex];
+            if (wave?.Enemies != null)
+            {
+                for (int e = 0; e < wave.Enemies.Count; e++)
+                {
+                    var entry = wave.Enemies[e];
+                    if (entry == null || entry.EnemyType == null)
+                        continue;
+
+                    for (int c = 0; c < entry.Count; c++)
+                        _pendingThisWave.Enqueue(entry.EnemyType);
+                }
+            }
         }
 
         public void Tick(float deltaTime)
         {
-            if (_allWavesCompleted)
-                return;
-
-            if (_waveActive)
-            {
+            if (_roomActive)
                 _spawnTimer += deltaTime;
-                if (_spawnTimer >= _config.SpawnDelay && _enemiesSpawnedThisWave < _config.EnemyCount)
-                {
-                    _spawnTimer = 0;
-                    _enemiesSpawnedThisWave++;
-                }
-            }
-            else if (_currentWave < _totalWaves)
-            {
-                _waveDelayTimer += deltaTime;
-                if (_waveDelayTimer >= _config.DelayBetweenWaves)
-                {
-                    _waveDelayTimer = 0;
-                    _currentWave++;
-                    _enemiesSpawnedThisWave = 0;
-                    _waveActive = true;
-                }
-            }
         }
 
-        public bool ShouldSpawnEnemy()
+        /// <summary>
+        /// Devuelve true y entrega el próximo EnemyTypeData a spawnear si corresponde
+        /// (respeta SpawnDelay y MaxEnemiesAlive de la wave). El GameManager hace el spawn real.
+        /// </summary>
+        public bool TryGetNextEnemyType(int aliveEnemyCount, out EnemyTypeData enemyType)
         {
-            if (!_waveActive || _enemiesSpawnedThisWave == 0)
+            enemyType = null;
+
+            if (!_roomActive || _waveIndex < 0 || _waveIndex >= WaveCount)
                 return false;
 
-            int alreadySpawned = _enemiesSpawnedThisWave - 1;
-            return alreadySpawned < _config.EnemyCount;
+            var wave = _room.Waves[_waveIndex];
+
+            // MaxEnemiesAlive <= 0 significa sin límite.
+            if (wave.MaxEnemiesAlive > 0 && aliveEnemyCount >= wave.MaxEnemiesAlive)
+                return false;
+
+            if (_spawnTimer < wave.SpawnDelay)
+                return false;
+
+            if (_pendingThisWave.Count == 0)
+                return false;
+
+            _spawnTimer = 0f;
+            enemyType = _pendingThisWave.Dequeue();
+            return true;
         }
 
-        public void MarkWaveEnemiesClearedIfReady(int aliveEnemyCount)
+        /// <summary>
+        /// Avanza wave/room cuando se spawnearon todos los enemigos de la wave y no queda
+        /// ninguno vivo. El GameManager la llama tras resolver muertes.
+        /// </summary>
+        public void UpdateProgress(int aliveEnemyCount)
         {
-            if (_waveActive && _enemiesSpawnedThisWave >= _config.EnemyCount && aliveEnemyCount == 0)
-            {
-                _waveActive = false;
+            if (!_roomActive || _waveIndex < 0 || _waveIndex >= WaveCount)
+                return;
 
-                if (_currentWave >= _totalWaves)
-                {
-                    _allWavesCompleted = true;
-                }
-                else
-                {
-                    _waveDelayTimer = 0;
-                }
+            bool allSpawned = _pendingThisWave.Count == 0;
+            if (allSpawned && aliveEnemyCount == 0)
+            {
+                IsWaveComplete = true;
+                AdvanceToNextWave();
             }
         }
     }

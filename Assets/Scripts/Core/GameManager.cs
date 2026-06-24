@@ -9,16 +9,20 @@ namespace OptimizationGame.Core
     public class GameManager : MonoBehaviour
     {
         [SerializeField] private Transform _playerTransform;
-        [SerializeField] private List<Transform> _spawnPoints = new();
         [SerializeField] private GameObject _enemyPrefab;
         [SerializeField] private GameObject _projectilePrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
-        [SerializeField] private EnemyTypeData _defaultEnemyType;
+        [SerializeField] private PoolConfig _poolConfig;
+
+        // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
+        [SerializeField] private GameFlowConfig _gameFlowConfig;
+        [SerializeField] private List<RoomSpawnGroup> _roomSpawnGroups = new();
 
         private PlayerSystem _playerSystem;
         private EnemySystem _enemySystem;
         private ProjectileSystem _projectileSystem;
         private WaveSystem _waveSystem;
+        private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
         private ObjectPool _objectPool;
 
@@ -27,11 +31,10 @@ namespace OptimizationGame.Core
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
 
         private int _nextSpawnPointIndex;
-        private float _spawnCheckTimer;
         private bool _gameOver;
         private bool _playerWon;
+        private bool _loggedMissingSpawnGroup;
 
-        private const float SpawnCheckInterval = 0.1f;
         private const float EnemyDamageInterval = 1f;
         private float _enemyDamageTimer;
 
@@ -44,10 +47,15 @@ namespace OptimizationGame.Core
 
         private void Start()
         {
-            if (_defaultEnemyType == null)
-                Debug.LogError("GameManager missing default EnemyTypeData reference.");
+            _roomSystem.StartFirstRoom();
 
-            _waveSystem.StartWaves();
+            if (!_roomSystem.HasCurrentRoom)
+            {
+                Debug.LogError("GameManager: GameFlowConfig vacío o sin rooms asignadas. No se iniciará el spawn.");
+                return;
+            }
+
+            _waveSystem.StartRoom(_roomSystem.CurrentRoom);
         }
 
         private void InitializeSystems()
@@ -59,7 +67,8 @@ namespace OptimizationGame.Core
             _playerSystem = new PlayerSystem(_playerModel, playerConfig);
             _enemySystem = new EnemySystem(() => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
-            _waveSystem = new WaveSystem(new WaveConfig(), totalWaves: 5);
+            _waveSystem = new WaveSystem();
+            _roomSystem = new RoomSystem(_gameFlowConfig);
             _combatSystem = new CombatSystem();
         }
 
@@ -69,8 +78,14 @@ namespace OptimizationGame.Core
             _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
             _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
 
-            _objectPool.Prewarm("Enemy", 64);
-            _objectPool.Prewarm("Projectile", 256);
+            if (_poolConfig == null)
+            {
+                Debug.LogError("GameManager missing PoolConfig reference. Pools will not be prewarmed (they will still grow on demand).");
+                return;
+            }
+
+            _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
+            _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
         }
 
         private void RegisterSystems()
@@ -94,31 +109,49 @@ namespace OptimizationGame.Core
 
         private void HandleSpawning()
         {
-            _spawnCheckTimer += Time.deltaTime;
-            if (_spawnCheckTimer < SpawnCheckInterval)
-                return;
-
-            _spawnCheckTimer = 0;
-
-            if (_waveSystem.ShouldSpawnEnemy() && _enemySystem.AliveCount < 15)
+            var spawnGroup = GetSpawnGroupForCurrentRoom();
+            if (spawnGroup == null || spawnGroup.SpawnPoints == null || spawnGroup.SpawnPoints.Count == 0)
             {
-                SpawnEnemy();
+                if (!_loggedMissingSpawnGroup)
+                {
+                    Debug.LogError($"GameManager: no hay RoomSpawnGroup con spawnpoints para RoomId '{_roomSystem.CurrentRoomId}'.");
+                    _loggedMissingSpawnGroup = true;
+                }
+                return;
+            }
+
+            if (_waveSystem.TryGetNextEnemyType(_enemySystem.AliveCount, out var enemyType))
+            {
+                SpawnEnemy(spawnGroup, enemyType);
             }
         }
 
-        private void SpawnEnemy()
+        private RoomSpawnGroup GetSpawnGroupForCurrentRoom()
         {
-            if (_spawnPoints.Count == 0 || _defaultEnemyType == null)
-                return;
+            string roomId = _roomSystem.CurrentRoomId;
+            if (roomId == null || _roomSpawnGroups == null)
+                return null;
 
-            var spawnPoint = _spawnPoints[_nextSpawnPointIndex % _spawnPoints.Count];
+            for (int i = 0; i < _roomSpawnGroups.Count; i++)
+            {
+                var group = _roomSpawnGroups[i];
+                if (group != null && group.RoomId == roomId)
+                    return group;
+            }
+
+            return null;
+        }
+
+        private void SpawnEnemy(RoomSpawnGroup spawnGroup, EnemyTypeData enemyType)
+        {
+            var spawnPoint = spawnGroup.SpawnPoints[_nextSpawnPointIndex % spawnGroup.SpawnPoints.Count];
             _nextSpawnPointIndex++;
 
             // Spawn en X/Z del spawnpoint, Y fijada al plano de juego (Y del player).
             Vector3 spawnPosition = spawnPoint.position;
             spawnPosition.y = _playerModel.Position.y;
 
-            var enemyModel = _enemySystem.CreateEnemy(_defaultEnemyType);
+            var enemyModel = _enemySystem.CreateEnemy(enemyType);
             enemyModel.Position = spawnPosition;
 
             var view = _objectPool.Spawn("Enemy", spawnPosition);
@@ -186,19 +219,28 @@ namespace OptimizationGame.Core
 
         private void HandleGameState()
         {
-            _waveSystem.MarkWaveEnemiesClearedIfReady(_enemySystem.AliveCount);
-
             if (!_playerModel.IsAlive)
             {
                 _gameOver = true;
                 Debug.Log("GAME OVER - PLAYER DEFEATED");
+                return;
             }
 
-            if (_waveSystem.AllWavesCompleted && _enemySystem.AliveCount == 0)
+            _waveSystem.UpdateProgress(_enemySystem.AliveCount);
+
+            if (_waveSystem.IsRoomComplete)
             {
-                _playerWon = true;
-                _gameOver = true;
-                Debug.Log("VICTORY - ALL WAVES COMPLETED");
+                if (_roomSystem.TryAdvanceToNextRoom())
+                {
+                    _loggedMissingSpawnGroup = false;
+                    _waveSystem.StartRoom(_roomSystem.CurrentRoom);
+                }
+                else
+                {
+                    _playerWon = true;
+                    _gameOver = true;
+                    Debug.Log("VICTORY - ALL ROOMS COMPLETED");
+                }
             }
         }
 

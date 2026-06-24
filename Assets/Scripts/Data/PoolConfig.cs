@@ -1,8 +1,13 @@
+using UnityEngine;
+
 namespace OptimizationGame.Data
 {
-    public class PoolConfig
+    [CreateAssetMenu(fileName = "PoolConfig", menuName = "OptimizationGame/Pool Config")]
+    public class PoolConfig : ScriptableObject
     {
-        public int ProjectilePoolSize = 256;
-        public int EnemyPoolSize = 128;
+        public int EnemyPrewarm = 32;
+        public int ProjectilePrewarm = 24;
+        public int VfxPrewarm = 32;
+        public int PickupPrewarm = 8;
     }
 }

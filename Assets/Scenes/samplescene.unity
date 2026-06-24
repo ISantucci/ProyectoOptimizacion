@@ -372,16 +372,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Core.GameManager
   _playerTransform: {fileID: 1294226504}
-  _spawnPoints:
-  - {fileID: 351158753}
-  - {fileID: 512819835}
-  - {fileID: 802275184}
-  - {fileID: 1316154430}
-  - {fileID: 1553649134}
-  - {fileID: 1916299575}
   _enemyPrefab: {fileID: 7637965844550797335, guid: 41d60d7f7c2cea0479c3034c429b32da, type: 3}
   _projectilePrefab: {fileID: 6787997616460462462, guid: 96d7ef1c9a6d19348a6526885e539812, type: 3}
   _updateManager: {fileID: 1294942944}
+  _poolConfig: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
+  _gameFlowConfig: {fileID: 11400000, guid: 71835a329537b264781b20af61aaa390, type: 2}
+  _roomSpawnGroups:
+  - RoomId: room_01
+    SpawnPoints:
+    - {fileID: 351158753}
+    - {fileID: 512819835}
+    - {fileID: 802275184}
+    - {fileID: 1316154430}
+    - {fileID: 1553649134}
+    - {fileID: 1916299575}
+    PlayerStart: {fileID: 0}
 --- !u!114 &1294942944
 MonoBehaviour:
   m_ObjectHideFlags: 0
