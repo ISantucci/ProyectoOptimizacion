@@ -437,8 +437,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 135, y: -29.1}
-  m_SizeDelta: {x: 226.7144, y: 38.7326}
+  m_AnchoredPosition: {x: 146, y: -48}
+  m_SizeDelta: {x: 225, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &320212723
 MonoBehaviour:
@@ -574,7 +574,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 131, y: -30}
+  m_AnchoredPosition: {x: 146, y: -48}
   m_SizeDelta: {x: 330, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &596129149
@@ -951,7 +951,6 @@ MonoBehaviour:
     EnemiesLeftCanvas: {fileID: 0}
     WeaponCanvas: {fileID: 0}
   _texts:
-    HealthText: {fileID: 0}
     HealthBar: {fileID: 320212723}
     WaveText: {fileID: 0}
     EnemiesLeftText: {fileID: 0}
@@ -1465,8 +1464,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 133.7, y: -31.7}
-  m_SizeDelta: {x: 205.8993, y: 45.0381}
+  m_AnchoredPosition: {x: 146, y: -48}
+  m_SizeDelta: {x: 200, y: 54}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1800313712
 MonoBehaviour:
