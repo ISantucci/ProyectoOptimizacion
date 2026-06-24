@@ -47,7 +47,7 @@ namespace OptimizationGame.MonoBehaviours
         private bool _subscribed;
 
         // Animación progresiva de la barra de vida (no depende de timeScale).
-        private const float HealthBarAnimationDuration = 0.6f;
+        private const float HealthBarAnimationDuration = 0.3f;
         private Coroutine _healthBarRoutine;
 
         private void Start()

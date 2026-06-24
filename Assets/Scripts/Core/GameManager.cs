@@ -31,8 +31,16 @@ namespace OptimizationGame.Core
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
 
-        private bool _gameOver;
-        private bool _playerWon;
+        // Estado de juego explícito. Solo en Playing corre el gameplay activo
+        // (input de disparo, spawn, combate, avance de waves/rooms, views).
+        private enum GameState
+        {
+            Playing,
+            Victory,
+            Defeat
+        }
+
+        private GameState _gameState = GameState.Playing;
         private bool _loggedMissingSpawnGroup;
 
         // Cooldown de ataque por enemigo. El timer vive en cada EnemyModel,
@@ -120,7 +128,9 @@ namespace OptimizationGame.Core
             // se notifique aunque el frame siguiente salga temprano por _gameOver.
             RefreshHud();
 
-            if (_gameOver)
+            // Tras emitir el HUD (incluida la vida = 0 al morir), si no estamos en
+            // Playing no corre nada de gameplay activo: ni spawn, ni combate, ni views.
+            if (_gameState != GameState.Playing)
                 return;
 
             HandleSpawning();
@@ -308,7 +318,8 @@ namespace OptimizationGame.Core
         {
             if (!_playerModel.IsAlive)
             {
-                _gameOver = true;
+                _gameState = GameState.Defeat;
+                _updateManager.IsPaused = true;
                 Debug.Log("GAME OVER - PLAYER DEFEATED");
                 return;
             }
@@ -324,8 +335,8 @@ namespace OptimizationGame.Core
                 }
                 else
                 {
-                    _playerWon = true;
-                    _gameOver = true;
+                    _gameState = GameState.Victory;
+                    _updateManager.IsPaused = true;
                     Debug.Log("VICTORY - ALL ROOMS COMPLETED");
                 }
             }
@@ -348,6 +359,11 @@ namespace OptimizationGame.Core
 
         public void FireProjectile()
         {
+            // Bloqueo doble: además del corte en Update(), no se crea ningún proyectil
+            // fuera de Playing aunque el InputReader siga enviando el click.
+            if (_gameState != GameState.Playing)
+                return;
+
             if (!_playerSystem.CanFire())
                 return;
 

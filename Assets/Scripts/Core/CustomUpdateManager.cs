@@ -8,6 +8,10 @@ namespace OptimizationGame.Core
     {
         private List<ITickable> _tickables = new();
 
+        // Pausa simple del loop. GameManager la activa en estados finales
+        // (Defeat/Victory) para frenar la simulación de los sistemas puros.
+        public bool IsPaused { get; set; }
+
         public void Register(ITickable tickable)
         {
             if (!_tickables.Contains(tickable))
@@ -21,6 +25,9 @@ namespace OptimizationGame.Core
 
         private void Update()
         {
+            if (IsPaused)
+                return;
+
             float deltaTime = Time.deltaTime;
             for (int i = 0; i < _tickables.Count; i++)
             {
