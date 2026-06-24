@@ -65,10 +65,16 @@ namespace OptimizationGame.Systems
 
             if (distance > _config.StoppingDistance)
             {
-                Vector3 targetDirection = (targetPosition - enemy.Position).normalized;
-                Vector3 separationForce = CalculateSeparation(enemy);
+                Vector3 toTarget = targetPosition - enemy.Position;
+                toTarget.y = 0f; // movimiento sólo en plano XZ
+                Vector3 targetDirection = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : Vector3.zero;
 
-                Vector3 finalDirection = (targetDirection + separationForce * SeparationWeight).normalized;
+                Vector3 separationForce = CalculateSeparation(enemy); // ya viene en XZ
+
+                Vector3 combined = targetDirection + separationForce * SeparationWeight;
+                combined.y = 0f;
+                Vector3 finalDirection = combined.sqrMagnitude > 0.0001f ? combined.normalized : Vector3.zero;
+
                 enemy.Position += finalDirection * enemy.MoveSpeed * deltaTime;
             }
         }
@@ -90,6 +96,7 @@ namespace OptimizationGame.Systems
                     continue;
 
                 Vector3 diff = enemy.Position - other.Position;
+                diff.y = 0f; // separación sólo en plano XZ, sin empuje en Y
                 float distToOther = diff.magnitude;
 
                 // Si está dentro del radio de separación

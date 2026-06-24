@@ -110,10 +110,14 @@ namespace OptimizationGame.Core
             var spawnPoint = _spawnPoints[_nextSpawnPointIndex % _spawnPoints.Count];
             _nextSpawnPointIndex++;
 
-            var enemyModel = _enemySystem.CreateEnemy();
-            enemyModel.Position = spawnPoint.position;
+            // Spawn en X/Z del spawnpoint, Y fijada al plano de juego (Y del player).
+            Vector3 spawnPosition = spawnPoint.position;
+            spawnPosition.y = _playerModel.Position.y;
 
-            var view = _objectPool.Spawn("Enemy", spawnPoint.position);
+            var enemyModel = _enemySystem.CreateEnemy();
+            enemyModel.Position = spawnPosition;
+
+            var view = _objectPool.Spawn("Enemy", spawnPosition);
             if (view != null)
             {
                 _enemyViews[enemyModel] = view;

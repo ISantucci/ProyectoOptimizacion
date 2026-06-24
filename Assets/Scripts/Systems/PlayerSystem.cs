@@ -61,7 +61,10 @@ namespace OptimizationGame.Systems
 
         public Vector3 GetFireDirection()
         {
-            return _moveDirection != Vector3.zero ? _moveDirection : Vector3.forward;
+            // Disparo siempre en plano XZ.
+            Vector3 dir = _moveDirection;
+            dir.y = 0f;
+            return dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector3.forward;
         }
 
         public ProjectileModel CreateProjectile(int projectileId)
