@@ -1,3 +1,4 @@
+using System;
 using OptimizationGame.Core;
 using UnityEngine;
 using UnityEngine.UI;
@@ -5,36 +6,167 @@ using TMPro;
 
 namespace OptimizationGame.MonoBehaviours
 {
+    /// <summary>
+    /// Capa de presentación del HUD (Room 1). NO contiene lógica de gameplay.
+    /// Modelo push: se suscribe a eventos de GameManager y solo actualiza un texto/barra
+    /// cuando el dato cambia. No tiene Update: cero reasignaciones de texto por frame,
+    /// para evitar Canvas Rebuilds innecesarios.
+    /// HUD separado por frecuencia de cambio: un Canvas por dato dinámico.
+    /// </summary>
     public class UIManager : MonoBehaviour
     {
-        [SerializeField] private GameManager _gameManager;
-        [SerializeField] private TextMeshProUGUI _healthText;
-        [SerializeField] private TextMeshProUGUI _waveText;
-        [SerializeField] private TextMeshProUGUI _enemyCountText;
-        [SerializeField] private Image _healthBar;
+        [Serializable]
+        private class HudCanvasReferences
+        {
+            public Canvas HealthCanvas;
+            public Canvas WaveCanvas;
+            public Canvas EnemiesLeftCanvas;
+            public Canvas WeaponCanvas;
+        }
 
-        private float _maxHealth;
+        [Serializable]
+        private class HudTextReferences
+        {
+            public TMP_Text HealthText;
+            public Image HealthBar;
+            public TMP_Text WaveText;
+            public TMP_Text EnemiesLeftText;
+            public TMP_Text WeaponText;
+        }
+
+        [SerializeField] private GameManager _gameManager;
+        [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
+        [SerializeField] private HudTextReferences _texts = new HudTextReferences();
+
+        // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
+        private string _lastHealthString;
+        private float _lastHealthFill = float.NaN;
+        private string _lastWaveString;
+        private string _lastEnemiesLeftString;
+        private string _lastWeaponString;
+
+        private bool _subscribed;
 
         private void Start()
         {
-            var playerModel = _gameManager.GetPlayerModel();
-            _maxHealth = playerModel.MaxHealth;
+            if (_gameManager == null)
+            {
+                Debug.LogError("UIManager: falta referencia a GameManager. El HUD no se actualizará.");
+                return;
+            }
+
+            Subscribe();
+            // Empujar estado inicial después de suscribir, sin depender del orden de Start.
+            _gameManager.BroadcastInitialUiState();
         }
 
-        private void Update()
+        private void OnDestroy()
         {
-            UpdateUI();
+            Unsubscribe();
         }
 
-        private void UpdateUI()
+        private void Subscribe()
         {
-            var playerModel = _gameManager.GetPlayerModel();
+            if (_subscribed || _gameManager == null)
+                return;
 
-            if (_healthText != null)
-                _healthText.text = $"Health: {playerModel.Health:F0}";
+            _gameManager.HealthChanged += UpdateHealth;
+            _gameManager.WaveChanged += UpdateWave;
+            _gameManager.EnemiesLeftChanged += UpdateEnemiesLeft;
+            _gameManager.WeaponChanged += UpdateWeapon;
+            _subscribed = true;
+        }
 
-            if (_healthBar != null)
-                _healthBar.fillAmount = playerModel.Health / _maxHealth;
+        private void Unsubscribe()
+        {
+            if (!_subscribed || _gameManager == null)
+                return;
+
+            _gameManager.HealthChanged -= UpdateHealth;
+            _gameManager.WaveChanged -= UpdateWave;
+            _gameManager.EnemiesLeftChanged -= UpdateEnemiesLeft;
+            _gameManager.WeaponChanged -= UpdateWeapon;
+            _subscribed = false;
+        }
+
+        /// <summary>Muestra/oculta los Canvas dinámicos del HUD.</summary>
+        public void SetHudVisible(bool visible)
+        {
+            SetCanvasActive(_canvases.HealthCanvas, visible);
+            SetCanvasActive(_canvases.WaveCanvas, visible);
+            SetCanvasActive(_canvases.EnemiesLeftCanvas, visible);
+            SetCanvasActive(_canvases.WeaponCanvas, visible);
+        }
+
+        private static void SetCanvasActive(Canvas canvas, bool visible)
+        {
+            if (canvas != null && canvas.gameObject.activeSelf != visible)
+                canvas.gameObject.SetActive(visible);
+        }
+
+        public void UpdateHealth(float current, float max)
+        {
+            if (_texts.HealthText != null)
+            {
+                string s = $"Health: {current:F0}";
+                if (s != _lastHealthString)
+                {
+                    _lastHealthString = s;
+                    _texts.HealthText.text = s;
+                }
+            }
+
+            if (_texts.HealthBar != null)
+            {
+                float fill = max > 0f ? Mathf.Clamp01(current / max) : 0f;
+                if (fill != _lastHealthFill)
+                {
+                    _lastHealthFill = fill;
+                    _texts.HealthBar.fillAmount = fill;
+                }
+            }
+        }
+
+        public void UpdateWave(string waveName, int currentWaveIndex, int totalWaves, bool isFinalWave)
+        {
+            if (_texts.WaveText == null)
+                return;
+
+            string s = isFinalWave
+                ? $"FINAL WAVE - {waveName}"
+                : $"Wave {currentWaveIndex + 1}/{totalWaves} - {waveName}";
+
+            if (s != _lastWaveString)
+            {
+                _lastWaveString = s;
+                _texts.WaveText.text = s;
+            }
+        }
+
+        public void UpdateEnemiesLeft(int enemiesLeft)
+        {
+            if (_texts.EnemiesLeftText == null)
+                return;
+
+            string s = $"Enemies left: {enemiesLeft}";
+            if (s != _lastEnemiesLeftString)
+            {
+                _lastEnemiesLeftString = s;
+                _texts.EnemiesLeftText.text = s;
+            }
+        }
+
+        public void UpdateWeapon(string weaponName)
+        {
+            if (_texts.WeaponText == null)
+                return;
+
+            string s = $"Weapon: {weaponName}";
+            if (s != _lastWeaponString)
+            {
+                _lastWeaponString = s;
+                _texts.WeaponText.text = s;
+            }
         }
     }
 }

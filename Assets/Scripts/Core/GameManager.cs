@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using OptimizationGame.Data;
 using OptimizationGame.Models;
@@ -30,13 +31,28 @@ namespace OptimizationGame.Core
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
 
-        private int _nextSpawnPointIndex;
         private bool _gameOver;
         private bool _playerWon;
         private bool _loggedMissingSpawnGroup;
 
         private const float EnemyDamageInterval = 1f;
         private float _enemyDamageTimer;
+
+        // --- HUD: eventos push (clases puras, sin MonoBehaviours nuevos) ---
+        // UIManager se suscribe a estos eventos. Solo se disparan cuando el dato cambia.
+        public event Action<float, float> HealthChanged;          // (current, max)
+        public event Action<string, int, int, bool> WaveChanged;  // (waveName, currentIndex, totalWaves, isFinalWave)
+        public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
+        public event Action<string> WeaponChanged;               // (weaponName)
+
+        // Nombre de arma actual (fuente temporal: PlayerConfig.WeaponName).
+        private string _weaponName;
+
+        // Cache de últimos valores enviados al HUD para detectar cambios.
+        private float _lastHealth = float.NaN;
+        private float _lastMaxHealth = float.NaN;
+        private int _lastWaveIndex = int.MinValue;
+        private int _lastEnemiesLeft = int.MinValue;
 
         private void Awake()
         {
@@ -61,6 +77,7 @@ namespace OptimizationGame.Core
         private void InitializeSystems()
         {
             var playerConfig = new PlayerConfig();
+            _weaponName = playerConfig.WeaponName;
             _playerModel = new PlayerModel(playerConfig.MaxHealth, playerConfig.MoveSpeed);
             _playerModel.Position = _playerTransform.position;
 
@@ -98,6 +115,10 @@ namespace OptimizationGame.Core
 
         private void Update()
         {
+            // Flush del HUD primero para que el último estado (p. ej. vida = 0 al morir)
+            // se notifique aunque el frame siguiente salga temprano por _gameOver.
+            RefreshHud();
+
             if (_gameOver)
                 return;
 
@@ -105,6 +126,70 @@ namespace OptimizationGame.Core
             HandleCombat();
             HandleGameState();
             UpdateViews();
+        }
+
+        /// <summary>
+        /// Reusa el loop existente del GameManager (no agrega Update propio en la UI).
+        /// Compara cada dato contra su valor cacheado y solo dispara el evento si cambió.
+        /// </summary>
+        private void RefreshHud()
+        {
+            // Vida.
+            float health = _playerModel.Health;
+            float maxHealth = _playerModel.MaxHealth;
+            if (health != _lastHealth || maxHealth != _lastMaxHealth)
+            {
+                _lastHealth = health;
+                _lastMaxHealth = maxHealth;
+                HealthChanged?.Invoke(health, maxHealth);
+            }
+
+            // Wave (cambia cuando cambia el índice de wave).
+            int waveIndex = _waveSystem.CurrentWaveIndex;
+            if (waveIndex != _lastWaveIndex)
+            {
+                _lastWaveIndex = waveIndex;
+                WaveChanged?.Invoke(
+                    _waveSystem.CurrentWaveName,
+                    waveIndex,
+                    _waveSystem.TotalWaves,
+                    _waveSystem.IsFinalWave);
+            }
+
+            // Enemigos restantes = pendientes de spawnear + vivos.
+            int enemiesLeft = _waveSystem.PendingToSpawnCount + _enemySystem.AliveCount;
+            if (enemiesLeft != _lastEnemiesLeft)
+            {
+                _lastEnemiesLeft = enemiesLeft;
+                EnemiesLeftChanged?.Invoke(enemiesLeft);
+            }
+        }
+
+        /// <summary>
+        /// Empuja el estado inicial completo del HUD una sola vez.
+        /// La llama UIManager en su Start(), después de suscribirse a los eventos,
+        /// para no depender del orden de ejecución de scripts.
+        /// </summary>
+        public void BroadcastInitialUiState()
+        {
+            // Empuja una snapshot inmediata para que el HUD no quede vacío.
+            HealthChanged?.Invoke(_playerModel.Health, _playerModel.MaxHealth);
+            WaveChanged?.Invoke(
+                _waveSystem.CurrentWaveName,
+                _waveSystem.CurrentWaveIndex,
+                _waveSystem.TotalWaves,
+                _waveSystem.IsFinalWave);
+            EnemiesLeftChanged?.Invoke(_waveSystem.PendingToSpawnCount + _enemySystem.AliveCount);
+
+            // El arma no cambia en este bloque: este es su único broadcast.
+            WeaponChanged?.Invoke(_weaponName);
+
+            // Dejar caches en sentinela: si UIManager.Start corrió antes de GameManager.Start
+            // (StartRoom aún no aplicado), el primer RefreshHud re-emitirá con datos ya correctos.
+            _lastHealth = float.NaN;
+            _lastMaxHealth = float.NaN;
+            _lastWaveIndex = int.MinValue;
+            _lastEnemiesLeft = int.MinValue;
         }
 
         private void HandleSpawning()
@@ -144,8 +229,9 @@ namespace OptimizationGame.Core
 
         private void SpawnEnemy(RoomSpawnGroup spawnGroup, EnemyTypeData enemyType)
         {
-            var spawnPoint = spawnGroup.SpawnPoints[_nextSpawnPointIndex % spawnGroup.SpawnPoints.Count];
-            _nextSpawnPointIndex++;
+            // Spawnpoint random dentro del RoomSpawnGroup de la room actual.
+            int index = UnityEngine.Random.Range(0, spawnGroup.SpawnPoints.Count);
+            var spawnPoint = spawnGroup.SpawnPoints[index];
 
             // Spawn en X/Z del spawnpoint, Y fijada al plano de juego (Y del player).
             Vector3 spawnPosition = spawnPoint.position;

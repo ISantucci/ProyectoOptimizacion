@@ -10,5 +10,6 @@ namespace OptimizationGame.Data
         public List<WaveEnemyEntry> Enemies = new();
         public float SpawnDelay;
         public int MaxEnemiesAlive;
+        public float DelayBeforeNextWave;
     }
 }
