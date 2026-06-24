@@ -35,8 +35,9 @@ namespace OptimizationGame.Core
         private bool _playerWon;
         private bool _loggedMissingSpawnGroup;
 
+        // Cooldown de ataque por enemigo. El timer vive en cada EnemyModel,
+        // no hay timer global compartido.
         private const float EnemyDamageInterval = 1f;
-        private float _enemyDamageTimer;
 
         // --- HUD: eventos push (clases puras, sin MonoBehaviours nuevos) ---
         // UIManager se suscribe a estos eventos. Solo se disparan cuando el dato cambia.
@@ -249,8 +250,6 @@ namespace OptimizationGame.Core
 
         private void HandleCombat()
         {
-            _enemyDamageTimer += Time.deltaTime;
-
             for (int i = _projectileSystem.Projectiles.Count - 1; i >= 0; i--)
             {
                 var projectile = _projectileSystem.Projectiles[i];
@@ -288,17 +287,19 @@ namespace OptimizationGame.Core
                 }
             }
 
-            if (_enemyDamageTimer >= EnemyDamageInterval)
+            // Daño al player con cooldown por enemigo.
+            // Cada EnemyModel arranca con su timer en 0 => primer contacto pega de inmediato.
+            // Tras pegar, queda en cooldown EnemyDamageInterval. Sin timer global compartido.
+            for (int i = _enemySystem.Enemies.Count - 1; i >= 0; i--)
             {
-                _enemyDamageTimer = 0;
+                var enemy = _enemySystem.Enemies[i];
+                enemy.TickAttackCooldown(Time.deltaTime);
 
-                for (int i = _enemySystem.Enemies.Count - 1; i >= 0; i--)
+                if (enemy.CanAttack &&
+                    _combatSystem.CheckPlayerEnemyCollision(_playerModel.Position, enemy.Position))
                 {
-                    var enemy = _enemySystem.Enemies[i];
-                    if (_combatSystem.CheckPlayerEnemyCollision(_playerModel.Position, enemy.Position))
-                    {
-                        _combatSystem.ApplyEnemyDamageToPlayer(enemy, _playerModel);
-                    }
+                    _combatSystem.ApplyEnemyDamageToPlayer(enemy, _playerModel);
+                    enemy.RegisterAttack(EnemyDamageInterval);
                 }
             }
         }
