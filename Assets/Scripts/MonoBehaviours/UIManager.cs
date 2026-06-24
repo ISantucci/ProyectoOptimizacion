@@ -29,6 +29,7 @@ namespace OptimizationGame.MonoBehaviours
         private class HudTextReferences
         {
             public Image HealthBar;
+            public TMP_Text HealthValueText; // opcional: número de vida sobre la barra
             public TMP_Text WaveText;
             public TMP_Text EnemiesLeftText;
             public TMP_Text WeaponText;
@@ -40,6 +41,7 @@ namespace OptimizationGame.MonoBehaviours
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
+        private string _lastHealthValueString;
         private string _lastWaveString;
         private string _lastEnemiesLeftString;
         private string _lastWeaponString;
@@ -109,7 +111,19 @@ namespace OptimizationGame.MonoBehaviours
 
         public void UpdateHealth(float current, float max)
         {
-            // La vida se comunica únicamente mediante HealthBar (opcional).
+            // Texto numérico de vida (opcional). Actualiza instantáneo, independiente
+            // de la animación de la barra. Solo reasigna si el string cambió.
+            if (_texts.HealthValueText != null)
+            {
+                string s = $"{Mathf.CeilToInt(current)}/{Mathf.CeilToInt(max)}";
+                if (s != _lastHealthValueString)
+                {
+                    _lastHealthValueString = s;
+                    _texts.HealthValueText.text = s;
+                }
+            }
+
+            // La barra de vida (opcional) sigue siendo la representación principal.
             if (_texts.HealthBar == null)
                 return;
 
@@ -160,9 +174,8 @@ namespace OptimizationGame.MonoBehaviours
             if (_texts.WaveText == null)
                 return;
 
-            string s = isFinalWave
-                ? $"FINAL WAVE - {waveName}"
-                : $"Wave {currentWaveIndex + 1}/{totalWaves} - {waveName}";
+            // Solo el nombre real de la wave; se ignoran índice, total y flag final.
+            string s = string.IsNullOrWhiteSpace(waveName) ? "Wave" : waveName;
 
             if (s != _lastWaveString)
             {
@@ -176,7 +189,8 @@ namespace OptimizationGame.MonoBehaviours
             if (_texts.EnemiesLeftText == null)
                 return;
 
-            string s = $"Enemies left: {enemiesLeft}";
+            int safeCount = Mathf.Max(0, enemiesLeft);
+            string s = $"Enemies: {safeCount}";
             if (s != _lastEnemiesLeftString)
             {
                 _lastEnemiesLeftString = s;
