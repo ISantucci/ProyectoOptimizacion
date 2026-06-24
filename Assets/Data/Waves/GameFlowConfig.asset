@@ -23,11 +23,26 @@ MonoBehaviour:
         Count: 10
       SpawnDelay: 1
       MaxEnemiesAlive: 6
+      DelayBeforeNextWave: 10
     - WaveName: Wave 2
       Enemies:
       - EnemyType: {fileID: 11400000, guid: 88bb5e971ec65e04dafd9cb9299c00e0, type: 2}
-        Count: 20
+        Count: 12
+      - EnemyType: {fileID: 11400000, guid: fcebd1078c19e9b4d8e972c93cd2de57, type: 2}
+        Count: 4
+      SpawnDelay: 0.35
+      MaxEnemiesAlive: 8
+      DelayBeforeNextWave: 10
+    - WaveName: Wave 3
+      Enemies:
+      - EnemyType: {fileID: 11400000, guid: 88bb5e971ec65e04dafd9cb9299c00e0, type: 2}
+        Count: 16
+      - EnemyType: {fileID: 11400000, guid: fcebd1078c19e9b4d8e972c93cd2de57, type: 2}
+        Count: 6
+      - EnemyType: {fileID: 11400000, guid: 738048b86c9eb534c82d4becca04ffa2, type: 2}
+        Count: 2
       SpawnDelay: 0.35
       MaxEnemiesAlive: 10
+      DelayBeforeNextWave: 0
     DelayBeforeNext: 10
     IsBossRoom: 0

@@ -14,9 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.EnemyTypeData
   EnemyId: BasicEnemy
   DisplayName: Basic Enemy
-  MaxHealth: 30
-  MoveSpeed: 8
-  Damage: 10
-  StoppingDistance: 1.2
+  MaxHealth: 80
+  MoveSpeed: 5
+  Damage: 18
+  StoppingDistance: 1.4
   IsBoss: 0
-  DebugColor: {r: 1, g: 0, b: 0, a: 1}
+  DebugColor: {r: 1, g: 0, b: 0.8595643, a: 1}

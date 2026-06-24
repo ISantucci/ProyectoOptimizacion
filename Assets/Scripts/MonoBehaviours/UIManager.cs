@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using OptimizationGame.Core;
 using UnityEngine;
 using UnityEngine.UI;
@@ -27,7 +28,6 @@ namespace OptimizationGame.MonoBehaviours
         [Serializable]
         private class HudTextReferences
         {
-            public TMP_Text HealthText;
             public Image HealthBar;
             public TMP_Text WaveText;
             public TMP_Text EnemiesLeftText;
@@ -39,13 +39,16 @@ namespace OptimizationGame.MonoBehaviours
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
-        private string _lastHealthString;
-        private float _lastHealthFill = float.NaN;
+        private float _lastHealthTargetFill = float.NaN;
         private string _lastWaveString;
         private string _lastEnemiesLeftString;
         private string _lastWeaponString;
 
         private bool _subscribed;
+
+        // Animación progresiva de la barra de vida (no depende de timeScale).
+        private const float HealthBarAnimationDuration = 0.6f;
+        private Coroutine _healthBarRoutine;
 
         private void Start()
         {
@@ -106,25 +109,50 @@ namespace OptimizationGame.MonoBehaviours
 
         public void UpdateHealth(float current, float max)
         {
-            if (_texts.HealthText != null)
+            // La vida se comunica únicamente mediante HealthBar (opcional).
+            if (_texts.HealthBar == null)
+                return;
+
+            float targetFill = max > 0f ? Mathf.Clamp01(current / max) : 0f;
+            if (targetFill == _lastHealthTargetFill)
+                return;
+
+            _lastHealthTargetFill = targetFill;
+            AnimateHealthBarTo(targetFill);
+        }
+
+        private void AnimateHealthBarTo(float targetFill)
+        {
+            // Si la barra estaba animando, cortar y reanudar desde el fill visible actual.
+            if (_healthBarRoutine != null)
+                StopCoroutine(_healthBarRoutine);
+
+            // Si el objeto está inactivo no se pueden lanzar coroutines: setear directo.
+            if (!isActiveAndEnabled)
             {
-                string s = $"Health: {current:F0}";
-                if (s != _lastHealthString)
-                {
-                    _lastHealthString = s;
-                    _texts.HealthText.text = s;
-                }
+                _texts.HealthBar.fillAmount = targetFill;
+                _healthBarRoutine = null;
+                return;
             }
 
-            if (_texts.HealthBar != null)
+            _healthBarRoutine = StartCoroutine(AnimateHealthBarRoutine(targetFill));
+        }
+
+        private IEnumerator AnimateHealthBarRoutine(float targetFill)
+        {
+            float startFill = _texts.HealthBar.fillAmount;
+            float elapsed = 0f;
+
+            while (elapsed < HealthBarAnimationDuration)
             {
-                float fill = max > 0f ? Mathf.Clamp01(current / max) : 0f;
-                if (fill != _lastHealthFill)
-                {
-                    _lastHealthFill = fill;
-                    _texts.HealthBar.fillAmount = fill;
-                }
+                elapsed += Time.unscaledDeltaTime; // independiente del timeScale (pausa futura)
+                float t = Mathf.Clamp01(elapsed / HealthBarAnimationDuration);
+                _texts.HealthBar.fillAmount = Mathf.Lerp(startFill, targetFill, t);
+                yield return null;
             }
+
+            _texts.HealthBar.fillAmount = targetFill;
+            _healthBarRoutine = null;
         }
 
         public void UpdateWave(string waveName, int currentWaveIndex, int totalWaves, bool isFinalWave)
