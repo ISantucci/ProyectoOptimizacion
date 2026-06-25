@@ -62,6 +62,8 @@ namespace OptimizationGame.Core
         public event Action<string, int, int, bool> WaveChanged;  // (waveName, currentIndex, totalWaves, isFinalWave)
         public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
         public event Action<string> WeaponChanged;               // (weaponName)
+        // Powerup temporal activo (Speed). (active, displayName, icon, remaining, duration)
+        public event Action<bool, string, Sprite, float, float> PowerUpChanged;
 
         // Nombre de arma actual (fuente: WeaponData.DisplayName, fallback PlayerConfig.WeaponName).
         private string _weaponName;
@@ -147,7 +149,13 @@ namespace OptimizationGame.Core
                 _playerTransform,
                 _pickupSystem,
                 _pickupViews,
-                (multiplier, duration) => _playerSystem.ApplySpeedBoost(multiplier, duration),
+                (multiplier, duration, displayName, icon) => _playerSystem.ApplySpeedBoost(multiplier, duration, displayName, icon),
+                () => (_playerSystem.HasActiveSpeedBoost,
+                       _playerSystem.SpeedBoostName,
+                       _playerSystem.SpeedBoostIcon,
+                       _playerSystem.SpeedBoostRemaining,
+                       _playerSystem.SpeedBoostDuration),
+                (active, displayName, icon, remaining, duration) => PowerUpChanged?.Invoke(active, displayName, icon, remaining, duration),
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
@@ -212,6 +220,8 @@ namespace OptimizationGame.Core
                 _waveSystem.IsFinalWave);
             EnemiesLeftChanged?.Invoke(_waveSystem.PendingToSpawnCount + _enemySystem.AliveCount);
             WeaponChanged?.Invoke(_weaponName);
+            // Powerup arranca inactivo: la UI del powerup queda oculta hasta recoger un Speed.
+            PowerUpChanged?.Invoke(false, null, null, 0f, 0f);
 
             // Si UIManager.Start corrió antes que el primer Tick, el orquestador re-emitirá
             // con datos ya correctos en su primer RefreshHud.

@@ -17,6 +17,7 @@ namespace OptimizationGame.Systems
     {
         private readonly List<PickupModel> _activePickups = new List<PickupModel>();
         private readonly List<PickupModel> _collectedPickups = new List<PickupModel>();
+        private readonly List<PickupModel> _expiredPickups = new List<PickupModel>();
         private readonly Func<Vector3> _getPlayerPosition;
 
         public PickupSystem(Func<Vector3> getPlayerPosition)
@@ -26,6 +27,7 @@ namespace OptimizationGame.Systems
 
         public IReadOnlyList<PickupModel> ActivePickups => _activePickups;
         public IReadOnlyList<PickupModel> CollectedPickups => _collectedPickups;
+        public IReadOnlyList<PickupModel> ExpiredPickups => _expiredPickups;
 
         public void AddPickup(PickupModel pickup)
         {
@@ -37,6 +39,11 @@ namespace OptimizationGame.Systems
         public void ClearCollectedPickups()
         {
             _collectedPickups.Clear();
+        }
+
+        public void ClearExpiredPickups()
+        {
+            _expiredPickups.Clear();
         }
 
         public void Tick(float deltaTime)
@@ -55,7 +62,11 @@ namespace OptimizationGame.Systems
                     continue;
                 }
 
-                // Distancia en plano XZ (arena cenital).
+                // 1) Descontar lifetime y recalcular titileo (estado en el modelo).
+                pickup.TickLifetime(deltaTime);
+
+                // 2) Recolección por proximidad (XZ). Tiene PRIORIDAD sobre la expiración:
+                //    si en el mismo frame se recoge y vence, gana la recolección.
                 Vector3 diff = pickup.Position - playerPos;
                 diff.y = 0f;
 
@@ -64,6 +75,15 @@ namespace OptimizationGame.Systems
                     pickup.MarkCollected();
                     _activePickups.RemoveAt(i);
                     _collectedPickups.Add(pickup);
+                    continue;
+                }
+
+                // 3) Expiración: no recogido y se agotó su lifetime.
+                if (pickup.IsExpired)
+                {
+                    pickup.MarkExpired();
+                    _activePickups.RemoveAt(i);
+                    _expiredPickups.Add(pickup);
                 }
             }
         }

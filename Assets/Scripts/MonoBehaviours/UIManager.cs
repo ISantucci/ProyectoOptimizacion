@@ -39,6 +39,11 @@ namespace OptimizationGame.MonoBehaviours
         [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
+        // UI del powerup temporal activo (Speed). Opcionales: si quedan sin asignar, no crashea.
+        // La Image debe configurarse en Unity como Filled / Vertical / Origin Top para vaciarse hacia abajo.
+        [SerializeField] private CanvasGroup powerUpCanvasGroup;
+        [SerializeField] private Image powerUpIconFill;
+
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
         private string _lastHealthValueString;
@@ -79,6 +84,7 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.WaveChanged += UpdateWave;
             _gameManager.EnemiesLeftChanged += UpdateEnemiesLeft;
             _gameManager.WeaponChanged += UpdateWeapon;
+            _gameManager.PowerUpChanged += UpdatePowerUp;
             _subscribed = true;
         }
 
@@ -91,6 +97,7 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.WaveChanged -= UpdateWave;
             _gameManager.EnemiesLeftChanged -= UpdateEnemiesLeft;
             _gameManager.WeaponChanged -= UpdateWeapon;
+            _gameManager.PowerUpChanged -= UpdatePowerUp;
             _subscribed = false;
         }
 
@@ -196,6 +203,30 @@ namespace OptimizationGame.MonoBehaviours
                 _lastEnemiesLeftString = s;
                 _texts.EnemiesLeftText.text = s;
             }
+        }
+
+        /// <summary>
+        /// Actualiza la UI del powerup temporal activo (Speed). Push por evento, sin Update.
+        /// Si active es false, oculta el CanvasGroup. Si es true, lo muestra, setea el ícono
+        /// y ajusta fillAmount = remaining/duration (clamp 0..1) para el vaciado vertical.
+        /// </summary>
+        public void UpdatePowerUp(bool active, string displayName, Sprite icon, float remaining, float duration)
+        {
+            if (powerUpCanvasGroup != null)
+            {
+                powerUpCanvasGroup.alpha = active ? 1f : 0f;
+                powerUpCanvasGroup.interactable = active;
+                powerUpCanvasGroup.blocksRaycasts = active;
+            }
+
+            if (!active || powerUpIconFill == null)
+                return;
+
+            if (icon != null)
+                powerUpIconFill.sprite = icon;
+
+            float fill = duration > 0f ? Mathf.Clamp01(remaining / duration) : 0f;
+            powerUpIconFill.fillAmount = fill;
         }
 
         public void UpdateWeapon(string weaponName)

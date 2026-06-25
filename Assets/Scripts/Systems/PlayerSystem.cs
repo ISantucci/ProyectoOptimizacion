@@ -18,8 +18,19 @@ namespace OptimizationGame.Systems
         // Speed boost temporal (pickup Speed). No stackea: recoger otro refresca/reemplaza.
         private float _speedMultiplier = 1f;
         private float _speedBoostTimer;
+        // Metadatos para la UI del powerup activo (no afectan la simulación).
+        private float _speedBoostDuration;
+        private string _speedBoostName;
+        private Sprite _speedBoostIcon;
 
         public PlayerModel Model => _model;
+
+        // --- Estado del speed boost expuesto para la UI (solo lectura) ---
+        public bool HasActiveSpeedBoost => _speedBoostTimer > 0f;
+        public float SpeedBoostRemaining => _speedBoostTimer;
+        public float SpeedBoostDuration => _speedBoostDuration;
+        public string SpeedBoostName => _speedBoostName;
+        public Sprite SpeedBoostIcon => _speedBoostIcon;
 
         public PlayerSystem(PlayerModel model, PlayerConfig config, WeaponData baseWeapon)
         {
@@ -52,12 +63,15 @@ namespace OptimizationGame.Systems
         /// Aplica/refresca un speed boost temporal. multiplier es factor sobre MoveSpeed;
         /// duration en segundos. No stackea: el nuevo reemplaza al anterior.
         /// </summary>
-        public void ApplySpeedBoost(float multiplier, float duration)
+        public void ApplySpeedBoost(float multiplier, float duration, string displayName, Sprite icon)
         {
             if (multiplier <= 0f || duration <= 0f)
                 return;
             _speedMultiplier = multiplier;
             _speedBoostTimer = duration;
+            _speedBoostDuration = duration;
+            _speedBoostName = displayName;
+            _speedBoostIcon = icon;
         }
 
         private void UpdateSpeedBoost(float deltaTime)
@@ -69,6 +83,9 @@ namespace OptimizationGame.Systems
                 {
                     _speedBoostTimer = 0f;
                     _speedMultiplier = 1f;
+                    _speedBoostDuration = 0f;
+                    _speedBoostName = null;
+                    _speedBoostIcon = null;
                 }
             }
         }

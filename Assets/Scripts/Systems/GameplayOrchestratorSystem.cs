@@ -51,7 +51,15 @@ namespace OptimizationGame.Systems
         private readonly PickupSystem _pickupSystem;
         private readonly Dictionary<PickupModel, EntityView> _pickupViews;
         // Aplica speed boost en PlayerSystem sin acoplar el orquestador a ese tipo.
-        private readonly Action<float, float> _applySpeedBoost;
+        // (multiplier, duration, displayName, icon)
+        private readonly Action<float, float, string, Sprite> _applySpeedBoost;
+        // Lee el estado del powerup activo (Speed) sin acoplar al tipo PlayerSystem.
+        // Devuelve (active, displayName, icon, remaining, duration).
+        private readonly Func<(bool active, string name, Sprite icon, float remaining, float duration)> _getPowerUpState;
+        // Notifica el estado del powerup a la UI (vía evento de GameManager).
+        private readonly Action<bool, string, Sprite, float, float> _notifyPowerUpChanged;
+        // Diff para emitir un único "inactive" al expirar y evitar spam estando apagado.
+        private bool _lastPowerUpActive;
 
         private int _nextPickupId;
         private bool _loggedMissingPickupPool;
@@ -94,7 +102,9 @@ namespace OptimizationGame.Systems
             Transform playerTransform,
             PickupSystem pickupSystem,
             Dictionary<PickupModel, EntityView> pickupViews,
-            Action<float, float> applySpeedBoost,
+            Action<float, float, string, Sprite> applySpeedBoost,
+            Func<(bool active, string name, Sprite icon, float remaining, float duration)> getPowerUpState,
+            Action<bool, string, Sprite, float, float> notifyPowerUpChanged,
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
@@ -114,6 +124,8 @@ namespace OptimizationGame.Systems
             _pickupSystem = pickupSystem;
             _pickupViews = pickupViews;
             _applySpeedBoost = applySpeedBoost;
+            _getPowerUpState = getPowerUpState;
+            _notifyPowerUpChanged = notifyPowerUpChanged;
             _raiseHealthChanged = raiseHealthChanged;
             _raiseWaveChanged = raiseWaveChanged;
             _raiseEnemiesLeftChanged = raiseEnemiesLeftChanged;
@@ -133,6 +145,15 @@ namespace OptimizationGame.Systems
             // Procesa pickups recogidos por PickupSystem (que ya tickeó antes en el frame)
             // ANTES de RefreshHud, para que un Heal emita HealthChanged en el mismo frame.
             HandlePickups();
+            // Expirados DESPUÉS de recogidos: la recolección ya removió de ActivePickups
+            // los que se juntaron este frame, así que no hay doble procesamiento.
+            HandleExpiredPickups();
+            // Titileo de los pickups que siguen en el piso.
+            UpdatePickupVisuals();
+
+            // Notifica a la UI el estado del powerup activo (Speed). Pasa por el Tick central
+            // (no es Update). PlayerSystem ya tickeó antes este frame, así que remaining está al día.
+            NotifyPowerUpState();
 
             // RefreshHud DESPUÉS del combate: garantiza que en el frame de muerte el HUD
             // emita vida = 0 ANTES de que HandleGameState pause el loop.
@@ -318,6 +339,12 @@ namespace OptimizationGame.Systems
             }
 
             view.SetColor(data.DebugColor);
+            // Si el PickupData tiene ícono y el prefab usa SpriteRenderer, mostrarlo.
+            // Si no hay ícono o no hay SpriteRenderer, queda el color/debug (no crashea).
+            view.SetSprite(data.Icon);
+            // La view viene del pool: pudo quedar oculta por el titileo de un uso anterior.
+            // Garantizar que arranca visible.
+            view.SetVisible(true);
 
             var model = new PickupModel(_nextPickupId++, data, position, PickupCollectRadius);
             _pickupViews[model] = view;
@@ -341,12 +368,77 @@ namespace OptimizationGame.Systems
 
                 if (_pickupViews.TryGetValue(model, out var view))
                 {
+                    // Restaurar visible antes de devolver al pool (el titileo pudo dejarlo oculto).
+                    view.SetVisible(true);
                     _objectPool.Despawn("Pickup", view);
                     _pickupViews.Remove(model);
                 }
             }
 
             _pickupSystem.ClearCollectedPickups();
+        }
+
+        // Procesa pickups EXPIRADOS (no recogidos): NO aplica efecto, solo devuelve la view
+        // al pool y limpia el mapping. La recolección ya tuvo prioridad en PickupSystem.Tick.
+        private void HandleExpiredPickups()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var expired = _pickupSystem.ExpiredPickups;
+            if (expired.Count == 0)
+                return;
+
+            for (int i = 0; i < expired.Count; i++)
+            {
+                var model = expired[i];
+                if (_pickupViews.TryGetValue(model, out var view))
+                {
+                    view.SetVisible(true);
+                    _objectPool.Despawn("Pickup", view);
+                    _pickupViews.Remove(model);
+                }
+            }
+
+            _pickupSystem.ClearExpiredPickups();
+        }
+
+        // Aplica el titileo a los pickups todavía activos leyendo ShouldBeVisible del modelo.
+        private void UpdatePickupVisuals()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var active = _pickupSystem.ActivePickups;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var model = active[i];
+                if (_pickupViews.TryGetValue(model, out var view))
+                    view.SetVisible(model.ShouldBeVisible);
+            }
+        }
+
+        // Empuja a la UI el estado del powerup activo. Mientras hay Speed activo, actualiza
+        // cada frame (aceptable: pasa por el Tick central, no por Update). Cuando expira,
+        // emite UNA sola vez "inactive" y deja de spamear.
+        private void NotifyPowerUpState()
+        {
+            if (_getPowerUpState == null || _notifyPowerUpChanged == null)
+                return;
+
+            var state = _getPowerUpState();
+
+            if (state.active)
+            {
+                _lastPowerUpActive = true;
+                _notifyPowerUpChanged(true, state.name, state.icon, state.remaining, state.duration);
+            }
+            else if (_lastPowerUpActive)
+            {
+                // Transición activo -> inactivo: emitir una vez para que la UI se oculte.
+                _lastPowerUpActive = false;
+                _notifyPowerUpChanged(false, null, null, 0f, 0f);
+            }
         }
 
         private void ApplyPickupEffect(PickupData data)
@@ -361,7 +453,8 @@ namespace OptimizationGame.Systems
                     _playerModel.Heal(data.Amount);
                     break;
                 case PickupKind.Speed:
-                    _applySpeedBoost?.Invoke(data.Amount, data.Duration);
+                    // Pasa nombre e ícono del PickupData para que la UI muestre el powerup activo.
+                    _applySpeedBoost?.Invoke(data.Amount, data.Duration, data.DisplayName, data.Icon);
                     break;
                 // Weapon/Shield: bloque futuro. No-op por ahora.
             }
