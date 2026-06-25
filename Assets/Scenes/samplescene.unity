@@ -380,6 +380,7 @@ MonoBehaviour:
   _updateManager: {fileID: 1294942944}
   _inputReader: {fileID: 1294942942}
   _poolConfig: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
+  _baseWeapon: {fileID: 11400000, guid: 522da670fba038543a80967d8e97e483, type: 2}
   _gameFlowConfig: {fileID: 11400000, guid: 71835a329537b264781b20af61aaa390, type: 2}
   _roomSpawnGroups:
   - RoomId: room_01
