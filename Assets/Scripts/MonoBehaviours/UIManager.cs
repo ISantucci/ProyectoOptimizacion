@@ -12,19 +12,9 @@ namespace OptimizationGame.MonoBehaviours
     /// Modelo push: se suscribe a eventos de GameManager y solo actualiza un texto/barra
     /// cuando el dato cambia. No tiene Update: cero reasignaciones de texto por frame,
     /// para evitar Canvas Rebuilds innecesarios.
-    /// HUD separado por frecuencia de cambio: un Canvas por dato dinámico.
     /// </summary>
     public class UIManager : MonoBehaviour
     {
-        [Serializable]
-        private class HudCanvasReferences
-        {
-            public Canvas HealthCanvas;
-            public Canvas WaveCanvas;
-            public Canvas EnemiesLeftCanvas;
-            public Canvas WeaponCanvas;
-        }
-
         [Serializable]
         private class HudTextReferences
         {
@@ -36,7 +26,6 @@ namespace OptimizationGame.MonoBehaviours
         }
 
         [SerializeField] private GameManager _gameManager;
-        [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
@@ -92,21 +81,6 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.EnemiesLeftChanged -= UpdateEnemiesLeft;
             _gameManager.WeaponChanged -= UpdateWeapon;
             _subscribed = false;
-        }
-
-        /// <summary>Muestra/oculta los Canvas dinámicos del HUD.</summary>
-        public void SetHudVisible(bool visible)
-        {
-            SetCanvasActive(_canvases.HealthCanvas, visible);
-            SetCanvasActive(_canvases.WaveCanvas, visible);
-            SetCanvasActive(_canvases.EnemiesLeftCanvas, visible);
-            SetCanvasActive(_canvases.WeaponCanvas, visible);
-        }
-
-        private static void SetCanvasActive(Canvas canvas, bool visible)
-        {
-            if (canvas != null && canvas.gameObject.activeSelf != visible)
-                canvas.gameObject.SetActive(visible);
         }
 
         public void UpdateHealth(float current, float max)
@@ -174,8 +148,16 @@ namespace OptimizationGame.MonoBehaviours
             if (_texts.WaveText == null)
                 return;
 
-            // Solo el nombre real de la wave; se ignoran índice, total y flag final.
-            string s = string.IsNullOrWhiteSpace(waveName) ? "Wave" : waveName;
+            string name = string.IsNullOrWhiteSpace(waveName) ? "Wave" : waveName;
+
+            // Ahora sí se usa el progreso real (índice/total) en vez de solo el nombre,
+            // como pide la consigna ("progreso de la wave" en la UI in-game).
+            string s = totalWaves > 0
+                ? $"{name} ({currentWaveIndex + 1}/{totalWaves})"
+                : name;
+
+            if (isFinalWave)
+                s += " - Final";
 
             if (s != _lastWaveString)
             {
