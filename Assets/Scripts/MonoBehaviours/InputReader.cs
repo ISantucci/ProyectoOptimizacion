@@ -1,10 +1,15 @@
 using OptimizationGame.Core;
+using OptimizationGame.Interfaces;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace OptimizationGame.MonoBehaviours
 {
-    public class InputReader : MonoBehaviour
+    // Lee el Input System nuevo y reenvía datos/acciones a GameManager.
+    // No tiene Update propio: la lectura recurrente corre por ITickable.Tick(dt),
+    // registrado en CustomUpdateManager (único frame callback de gameplay).
+    // OnEnable/OnDisable solo habilitan/deshabilitan/dispose de las InputActions.
+    public class InputReader : MonoBehaviour, ITickable
     {
         [SerializeField] private GameManager _gameManager;
         [SerializeField] private Camera _mainCamera;
@@ -25,6 +30,7 @@ namespace OptimizationGame.MonoBehaviours
         {
             _gameplayActions.Disable();
             _gameplayActions.Dispose();
+            _gameplayActions = null;
         }
 
         private void CreateInputActions()
@@ -52,8 +58,15 @@ namespace OptimizationGame.MonoBehaviours
             _pauseAction.AddBinding("<Keyboard>/escape");
         }
 
-        private void Update()
+        // Reemplaza al antiguo Update(): lo tickea el CustomUpdateManager.
+        // deltaTime no se usa (la lectura de input no depende del dt).
+        public void Tick(float deltaTime)
         {
+            // Guard defensivo: si OnEnable aún no creó las acciones (o ya se hizo
+            // dispose en OnDisable), no leer para evitar excepciones.
+            if (_gameplayActions == null)
+                return;
+
             ReadMovementInput();
             ReadLookInput();
             ReadFireInput();

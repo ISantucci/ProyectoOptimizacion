@@ -7,12 +7,23 @@ using UnityEngine;
 
 namespace OptimizationGame.Core
 {
+    /// <summary>
+    /// Composition root. Crea sistemas/modelos/pool, hace el wiring, registra los
+    /// ITickable en el CustomUpdateManager y es dueño de los recursos de presentación
+    /// (ObjectPool, mappings modelo->EntityView, eventos de HUD).
+    ///
+    /// NO ejecuta lógica recurrente: no tiene Update/FixedUpdate/LateUpdate. Toda la
+    /// lógica recurrente de gameplay vive en GameplayOrchestratorSystem (clase pura),
+    /// que corre por CustomUpdateManager. Aquí solo quedan: inicialización (Awake),
+    /// callbacks no recurrentes invocados por InputReader y el broadcast inicial de UI.
+    /// </summary>
     public class GameManager : MonoBehaviour
     {
         [SerializeField] private Transform _playerTransform;
         [SerializeField] private GameObject _enemyPrefab;
         [SerializeField] private GameObject _projectilePrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
+        [SerializeField] private MonoBehaviours.InputReader _inputReader;
         [SerializeField] private PoolConfig _poolConfig;
 
         // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
@@ -26,29 +37,18 @@ namespace OptimizationGame.Core
         private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
         private ObjectPool _objectPool;
+        private GameplayOrchestratorSystem _orchestrator;
 
         private PlayerModel _playerModel;
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
 
-        // Estado de juego explícito. Solo en Playing corre el gameplay activo
-        // (input de disparo, spawn, combate, avance de waves/rooms, views).
-        private enum GameState
-        {
-            Playing,
-            Victory,
-            Defeat
-        }
-
-        private GameState _gameState = GameState.Playing;
-        private bool _loggedMissingSpawnGroup;
-
-        // Cooldown de ataque por enemigo. El timer vive en cada EnemyModel,
-        // no hay timer global compartido.
-        private const float EnemyDamageInterval = 1f;
+        // Bloqueo de gameplay tras Victory/Defeat. Lo activa el orquestador vía EndGameplay().
+        // GameManager es dueño de la pausa del loop y del bloqueo del disparo.
+        private bool _gameplayEnded;
 
         // --- HUD: eventos push (clases puras, sin MonoBehaviours nuevos) ---
-        // UIManager se suscribe a estos eventos. Solo se disparan cuando el dato cambia.
+        // UIManager se suscribe a estos eventos. El orquestador los dispara vía delegates.
         public event Action<float, float> HealthChanged;          // (current, max)
         public event Action<string, int, int, bool> WaveChanged;  // (waveName, currentIndex, totalWaves, isFinalWave)
         public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
@@ -57,30 +57,13 @@ namespace OptimizationGame.Core
         // Nombre de arma actual (fuente temporal: PlayerConfig.WeaponName).
         private string _weaponName;
 
-        // Cache de últimos valores enviados al HUD para detectar cambios.
-        private float _lastHealth = float.NaN;
-        private float _lastMaxHealth = float.NaN;
-        private int _lastWaveIndex = int.MinValue;
-        private int _lastEnemiesLeft = int.MinValue;
-
         private void Awake()
         {
             InitializeSystems();
             InitializePools();
+            CreateOrchestrator();
             RegisterSystems();
-        }
-
-        private void Start()
-        {
-            _roomSystem.StartFirstRoom();
-
-            if (!_roomSystem.HasCurrentRoom)
-            {
-                Debug.LogError("GameManager: GameFlowConfig vacío o sin rooms asignadas. No se iniciará el spawn.");
-                return;
-            }
-
-            _waveSystem.StartRoom(_roomSystem.CurrentRoom);
+            StartGameplay();
         }
 
         private void InitializeSystems()
@@ -114,66 +97,68 @@ namespace OptimizationGame.Core
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
         }
 
+        // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
+        // instancias de pool/diccionarios/spawn groups (referencias, no copias) para no
+        // duplicar ownership. El HUD y el fin de juego se pasan como delegates para no
+        // acoplar el sistema puro al tipo GameManager.
+        private void CreateOrchestrator()
+        {
+            _orchestrator = new GameplayOrchestratorSystem(
+                _playerModel,
+                _enemySystem,
+                _projectileSystem,
+                _waveSystem,
+                _roomSystem,
+                _combatSystem,
+                _objectPool,
+                _enemyViews,
+                _projectileViews,
+                _roomSpawnGroups,
+                _playerTransform,
+                (current, max) => HealthChanged?.Invoke(current, max),
+                (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
+                enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
+                EndGameplay);
+        }
+
+        // Orden de tick: simulación primero, orquestador al final, para que lea el estado
+        // ya actualizado del frame.
         private void RegisterSystems()
         {
+            // InputReader primero: el input del frame se lee antes de que PlayerSystem
+            // actualice movimiento/disparo. Es un MonoBehaviour ya existente que ahora
+            // implementa ITickable (no se agrega ningún MonoBehaviour nuevo).
+            if (_inputReader != null)
+                _updateManager.Register(_inputReader);
+            else
+                Debug.LogError("GameManager: _inputReader sin asignar en el Inspector. El input no se leerá.");
+
             _updateManager.Register(_playerSystem);
             _updateManager.Register(_enemySystem);
             _updateManager.Register(_projectileSystem);
             _updateManager.Register(_waveSystem);
+            _updateManager.Register(_orchestrator);
         }
 
-        private void Update()
+        private void StartGameplay()
         {
-            // Flush del HUD primero para que el último estado (p. ej. vida = 0 al morir)
-            // se notifique aunque el frame siguiente salga temprano por _gameOver.
-            RefreshHud();
+            _roomSystem.StartFirstRoom();
 
-            // Tras emitir el HUD (incluida la vida = 0 al morir), si no estamos en
-            // Playing no corre nada de gameplay activo: ni spawn, ni combate, ni views.
-            if (_gameState != GameState.Playing)
+            if (!_roomSystem.HasCurrentRoom)
+            {
+                Debug.LogError("GameManager: GameFlowConfig vacío o sin rooms asignadas. No se iniciará el spawn.");
                 return;
+            }
 
-            HandleSpawning();
-            HandleCombat();
-            HandleGameState();
-            UpdateViews();
+            _waveSystem.StartRoom(_roomSystem.CurrentRoom);
         }
 
-        /// <summary>
-        /// Reusa el loop existente del GameManager (no agrega Update propio en la UI).
-        /// Compara cada dato contra su valor cacheado y solo dispara el evento si cambió.
-        /// </summary>
-        private void RefreshHud()
+        // Llamado por el orquestador al entrar en Defeat/Victory. Pausa el loop central
+        // y bloquea el disparo. El último HUD (vida = 0) ya se emitió antes de esta llamada.
+        private void EndGameplay()
         {
-            // Vida.
-            float health = _playerModel.Health;
-            float maxHealth = _playerModel.MaxHealth;
-            if (health != _lastHealth || maxHealth != _lastMaxHealth)
-            {
-                _lastHealth = health;
-                _lastMaxHealth = maxHealth;
-                HealthChanged?.Invoke(health, maxHealth);
-            }
-
-            // Wave (cambia cuando cambia el índice de wave).
-            int waveIndex = _waveSystem.CurrentWaveIndex;
-            if (waveIndex != _lastWaveIndex)
-            {
-                _lastWaveIndex = waveIndex;
-                WaveChanged?.Invoke(
-                    _waveSystem.CurrentWaveName,
-                    waveIndex,
-                    _waveSystem.TotalWaves,
-                    _waveSystem.IsFinalWave);
-            }
-
-            // Enemigos restantes = pendientes de spawnear + vivos.
-            int enemiesLeft = _waveSystem.PendingToSpawnCount + _enemySystem.AliveCount;
-            if (enemiesLeft != _lastEnemiesLeft)
-            {
-                _lastEnemiesLeft = enemiesLeft;
-                EnemiesLeftChanged?.Invoke(enemiesLeft);
-            }
+            _gameplayEnded = true;
+            _updateManager.IsPaused = true;
         }
 
         /// <summary>
@@ -183,7 +168,6 @@ namespace OptimizationGame.Core
         /// </summary>
         public void BroadcastInitialUiState()
         {
-            // Empuja una snapshot inmediata para que el HUD no quede vacío.
             HealthChanged?.Invoke(_playerModel.Health, _playerModel.MaxHealth);
             WaveChanged?.Invoke(
                 _waveSystem.CurrentWaveName,
@@ -191,177 +175,20 @@ namespace OptimizationGame.Core
                 _waveSystem.TotalWaves,
                 _waveSystem.IsFinalWave);
             EnemiesLeftChanged?.Invoke(_waveSystem.PendingToSpawnCount + _enemySystem.AliveCount);
-
-            // El arma no cambia en este bloque: este es su único broadcast.
             WeaponChanged?.Invoke(_weaponName);
 
-            // Dejar caches en sentinela: si UIManager.Start corrió antes de GameManager.Start
-            // (StartRoom aún no aplicado), el primer RefreshHud re-emitirá con datos ya correctos.
-            _lastHealth = float.NaN;
-            _lastMaxHealth = float.NaN;
-            _lastWaveIndex = int.MinValue;
-            _lastEnemiesLeft = int.MinValue;
+            // Si UIManager.Start corrió antes que el primer Tick, el orquestador re-emitirá
+            // con datos ya correctos en su primer RefreshHud.
+            _orchestrator.ResetHudCaches();
         }
 
-        private void HandleSpawning()
-        {
-            var spawnGroup = GetSpawnGroupForCurrentRoom();
-            if (spawnGroup == null || spawnGroup.SpawnPoints == null || spawnGroup.SpawnPoints.Count == 0)
-            {
-                if (!_loggedMissingSpawnGroup)
-                {
-                    Debug.LogError($"GameManager: no hay RoomSpawnGroup con spawnpoints para RoomId '{_roomSystem.CurrentRoomId}'.");
-                    _loggedMissingSpawnGroup = true;
-                }
-                return;
-            }
-
-            if (_waveSystem.TryGetNextEnemyType(_enemySystem.AliveCount, out var enemyType))
-            {
-                SpawnEnemy(spawnGroup, enemyType);
-            }
-        }
-
-        private RoomSpawnGroup GetSpawnGroupForCurrentRoom()
-        {
-            string roomId = _roomSystem.CurrentRoomId;
-            if (roomId == null || _roomSpawnGroups == null)
-                return null;
-
-            for (int i = 0; i < _roomSpawnGroups.Count; i++)
-            {
-                var group = _roomSpawnGroups[i];
-                if (group != null && group.RoomId == roomId)
-                    return group;
-            }
-
-            return null;
-        }
-
-        private void SpawnEnemy(RoomSpawnGroup spawnGroup, EnemyTypeData enemyType)
-        {
-            // Spawnpoint random dentro del RoomSpawnGroup de la room actual.
-            int index = UnityEngine.Random.Range(0, spawnGroup.SpawnPoints.Count);
-            var spawnPoint = spawnGroup.SpawnPoints[index];
-
-            // Spawn en X/Z del spawnpoint, Y fijada al plano de juego (Y del player).
-            Vector3 spawnPosition = spawnPoint.position;
-            spawnPosition.y = _playerModel.Position.y;
-
-            var enemyModel = _enemySystem.CreateEnemy(enemyType);
-            enemyModel.Position = spawnPosition;
-
-            var view = _objectPool.Spawn("Enemy", spawnPosition);
-            if (view != null)
-            {
-                _enemyViews[enemyModel] = view;
-            }
-        }
-
-        private void HandleCombat()
-        {
-            for (int i = _projectileSystem.Projectiles.Count - 1; i >= 0; i--)
-            {
-                var projectile = _projectileSystem.Projectiles[i];
-                bool projectileHit = false;
-
-                for (int j = _enemySystem.Enemies.Count - 1; j >= 0; j--)
-                {
-                    var enemy = _enemySystem.Enemies[j];
-                    bool hit = _combatSystem.ResolveProjectileEnemyCollision(projectile, enemy);
-
-                    if (!enemy.IsAlive && _enemyViews.ContainsKey(enemy))
-                    {
-                        var enemyView = _enemyViews[enemy];
-                        _objectPool.Despawn("Enemy", enemyView);
-                        _enemyViews.Remove(enemy);
-                        _enemySystem.RemoveEnemy(enemy);
-                    }
-
-                    if (hit)
-                    {
-                        projectileHit = true;
-                        break;
-                    }
-                }
-
-                if (projectileHit || projectile.HasReachedMaxDistance)
-                {
-                    if (_projectileViews.ContainsKey(projectile))
-                    {
-                        var projectileView = _projectileViews[projectile];
-                        _objectPool.Despawn("Projectile", projectileView);
-                        _projectileViews.Remove(projectile);
-                    }
-                    _projectileSystem.RemoveProjectile(projectile);
-                }
-            }
-
-            // Daño al player con cooldown por enemigo.
-            // Cada EnemyModel arranca con su timer en 0 => primer contacto pega de inmediato.
-            // Tras pegar, queda en cooldown EnemyDamageInterval. Sin timer global compartido.
-            for (int i = _enemySystem.Enemies.Count - 1; i >= 0; i--)
-            {
-                var enemy = _enemySystem.Enemies[i];
-                enemy.TickAttackCooldown(Time.deltaTime);
-
-                if (enemy.CanAttack &&
-                    _combatSystem.CheckPlayerEnemyCollision(_playerModel.Position, enemy.Position))
-                {
-                    _combatSystem.ApplyEnemyDamageToPlayer(enemy, _playerModel);
-                    enemy.RegisterAttack(EnemyDamageInterval);
-                }
-            }
-        }
-
-        private void HandleGameState()
-        {
-            if (!_playerModel.IsAlive)
-            {
-                _gameState = GameState.Defeat;
-                _updateManager.IsPaused = true;
-                Debug.Log("GAME OVER - PLAYER DEFEATED");
-                return;
-            }
-
-            _waveSystem.UpdateProgress(_enemySystem.AliveCount);
-
-            if (_waveSystem.IsRoomComplete)
-            {
-                if (_roomSystem.TryAdvanceToNextRoom())
-                {
-                    _loggedMissingSpawnGroup = false;
-                    _waveSystem.StartRoom(_roomSystem.CurrentRoom);
-                }
-                else
-                {
-                    _gameState = GameState.Victory;
-                    _updateManager.IsPaused = true;
-                    Debug.Log("VICTORY - ALL ROOMS COMPLETED");
-                }
-            }
-        }
-
-        private void UpdateViews()
-        {
-            _playerTransform.position = _playerModel.Position;
-
-            foreach (var kvp in _enemyViews)
-            {
-                kvp.Value.SetPosition(kvp.Key.Position);
-            }
-
-            foreach (var kvp in _projectileViews)
-            {
-                kvp.Value.SetPosition(kvp.Key.Position);
-            }
-        }
+        // --- Callbacks no recurrentes invocados por InputReader ---
 
         public void FireProjectile()
         {
-            // Bloqueo doble: además del corte en Update(), no se crea ningún proyectil
-            // fuera de Playing aunque el InputReader siga enviando el click.
-            if (_gameState != GameState.Playing)
+            // Bloqueo tras fin de juego: no se crea ningún proyectil aunque InputReader
+            // siga enviando el click.
+            if (_gameplayEnded)
                 return;
 
             if (!_playerSystem.CanFire())
