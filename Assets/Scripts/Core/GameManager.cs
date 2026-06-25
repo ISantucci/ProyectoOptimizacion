@@ -22,6 +22,9 @@ namespace OptimizationGame.Core
         [SerializeField] private Transform _playerTransform;
         [SerializeField] private GameObject _enemyPrefab;
         [SerializeField] private GameObject _projectilePrefab;
+        // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
+        // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
+        [SerializeField] private GameObject _pickupPrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
         [SerializeField] private MonoBehaviours.InputReader _inputReader;
         [SerializeField] private PoolConfig _poolConfig;
@@ -40,12 +43,14 @@ namespace OptimizationGame.Core
         private WaveSystem _waveSystem;
         private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
+        private PickupSystem _pickupSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
 
         private PlayerModel _playerModel;
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
+        private Dictionary<PickupModel, MonoBehaviours.EntityView> _pickupViews = new();
 
         // Bloqueo de gameplay tras Victory/Defeat. Lo activa el orquestador vía EndGameplay().
         // GameManager es dueño de la pausa del loop y del bloqueo del disparo.
@@ -94,6 +99,7 @@ namespace OptimizationGame.Core
             _waveSystem = new WaveSystem();
             _roomSystem = new RoomSystem(_gameFlowConfig);
             _combatSystem = new CombatSystem();
+            _pickupSystem = new PickupSystem(() => _playerModel.Position);
         }
 
         private void InitializePools()
@@ -101,6 +107,13 @@ namespace OptimizationGame.Core
             _objectPool = new ObjectPool();
             _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
             _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
+
+            // Pickup: opcional. Si no hay prefab, no se registra la key y el spawn degrada
+            // con warning en el orquestador (sin crashear).
+            if (_pickupPrefab != null)
+                _objectPool.RegisterPrefab("Pickup", _pickupPrefab);
+            else
+                Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
 
             if (_poolConfig == null)
             {
@@ -110,6 +123,8 @@ namespace OptimizationGame.Core
 
             _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
+            if (_pickupPrefab != null)
+                _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -130,6 +145,9 @@ namespace OptimizationGame.Core
                 _projectileViews,
                 _roomSpawnGroups,
                 _playerTransform,
+                _pickupSystem,
+                _pickupViews,
+                (multiplier, duration) => _playerSystem.ApplySpeedBoost(multiplier, duration),
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
@@ -152,6 +170,9 @@ namespace OptimizationGame.Core
             _updateManager.Register(_enemySystem);
             _updateManager.Register(_projectileSystem);
             _updateManager.Register(_waveSystem);
+            // PickupSystem antes del orquestador: detecta recogidas en el frame y el
+            // orquestador las procesa (efectos + despawn) en el mismo Tick.
+            _updateManager.Register(_pickupSystem);
             _updateManager.Register(_orchestrator);
         }
 

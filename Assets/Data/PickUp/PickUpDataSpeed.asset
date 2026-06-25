@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8051f5a41a55857438bada3af30af551, type: 3}
-  m_Name: PickupData
+  m_Name: PickUpDataSpeed
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.PickupData
-  pickupId: 
-  displayName: 
-  kind: 0
-  amount: 0
-  duration: 0
+  pickupId: SpeedPickUp
+  displayName: SpeedPickUp
+  kind: 2
+  amount: 2
+  duration: 5
   weaponData: {fileID: 0}
-  debugColor: {r: 1, g: 1, b: 1, a: 1}
+  debugColor: {r: 0, g: 1, b: 0, a: 1}

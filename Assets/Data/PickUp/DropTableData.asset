@@ -12,5 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 37fe8771534732047a60e53c30912010, type: 3}
   m_Name: DropTableData
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.DropTableData
-  overallDropChance: 0.5
-  categoryEntries: []
+  overallDropChance: 1
+  categoryEntries:
+  - category: 1
+    weight: 100
+    drops:
+    - pickup: {fileID: 11400000, guid: b1a3118cc042eb14d9a62e1232f03f8a, type: 2}
+      weight: 100

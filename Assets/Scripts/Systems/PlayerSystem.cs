@@ -15,6 +15,10 @@ namespace OptimizationGame.Systems
         private Vector3 _moveDirection;
         private float _fireCooldownTimer;
 
+        // Speed boost temporal (pickup Speed). No stackea: recoger otro refresca/reemplaza.
+        private float _speedMultiplier = 1f;
+        private float _speedBoostTimer;
+
         public PlayerModel Model => _model;
 
         public PlayerSystem(PlayerModel model, PlayerConfig config, WeaponData baseWeapon)
@@ -39,13 +43,39 @@ namespace OptimizationGame.Systems
 
         public void Tick(float deltaTime)
         {
+            UpdateSpeedBoost(deltaTime);
             UpdatePosition(deltaTime);
             UpdateFireCooldown(deltaTime);
         }
 
+        /// <summary>
+        /// Aplica/refresca un speed boost temporal. multiplier es factor sobre MoveSpeed;
+        /// duration en segundos. No stackea: el nuevo reemplaza al anterior.
+        /// </summary>
+        public void ApplySpeedBoost(float multiplier, float duration)
+        {
+            if (multiplier <= 0f || duration <= 0f)
+                return;
+            _speedMultiplier = multiplier;
+            _speedBoostTimer = duration;
+        }
+
+        private void UpdateSpeedBoost(float deltaTime)
+        {
+            if (_speedBoostTimer > 0f)
+            {
+                _speedBoostTimer -= deltaTime;
+                if (_speedBoostTimer <= 0f)
+                {
+                    _speedBoostTimer = 0f;
+                    _speedMultiplier = 1f;
+                }
+            }
+        }
+
         private void UpdatePosition(float deltaTime)
         {
-            _model.Position += _moveInput * _config.MoveSpeed * deltaTime;
+            _model.Position += _moveInput * _config.MoveSpeed * _speedMultiplier * deltaTime;
         }
 
         private void UpdateFireCooldown(float deltaTime)

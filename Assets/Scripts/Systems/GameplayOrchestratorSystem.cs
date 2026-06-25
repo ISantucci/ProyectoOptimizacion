@@ -47,6 +47,18 @@ namespace OptimizationGame.Systems
         private readonly List<RoomSpawnGroup> _roomSpawnGroups;
         private readonly Transform _playerTransform;
 
+        // --- Pickups (Bloque C). Referencias compartidas creadas por GameManager. ---
+        private readonly PickupSystem _pickupSystem;
+        private readonly Dictionary<PickupModel, EntityView> _pickupViews;
+        // Aplica speed boost en PlayerSystem sin acoplar el orquestador a ese tipo.
+        private readonly Action<float, float> _applySpeedBoost;
+
+        private int _nextPickupId;
+        private bool _loggedMissingPickupPool;
+
+        // Radio de recogida del pickup (XZ).
+        private const float PickupCollectRadius = 1.5f;
+
         // DropSystem: clase pura, stateless. Instanciado aquí para no tocar el wiring de
         // GameManager. NO es ITickable; solo se invoca puntualmente al morir un enemigo.
         private readonly DropSystem _dropSystem = new DropSystem();
@@ -80,6 +92,9 @@ namespace OptimizationGame.Systems
             Dictionary<ProjectileModel, EntityView> projectileViews,
             List<RoomSpawnGroup> roomSpawnGroups,
             Transform playerTransform,
+            PickupSystem pickupSystem,
+            Dictionary<PickupModel, EntityView> pickupViews,
+            Action<float, float> applySpeedBoost,
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
@@ -96,6 +111,9 @@ namespace OptimizationGame.Systems
             _projectileViews = projectileViews;
             _roomSpawnGroups = roomSpawnGroups;
             _playerTransform = playerTransform;
+            _pickupSystem = pickupSystem;
+            _pickupViews = pickupViews;
+            _applySpeedBoost = applySpeedBoost;
             _raiseHealthChanged = raiseHealthChanged;
             _raiseWaveChanged = raiseWaveChanged;
             _raiseEnemiesLeftChanged = raiseEnemiesLeftChanged;
@@ -111,6 +129,10 @@ namespace OptimizationGame.Systems
 
             HandleSpawning();
             HandleCombat(deltaTime);
+
+            // Procesa pickups recogidos por PickupSystem (que ya tickeó antes en el frame)
+            // ANTES de RefreshHud, para que un Heal emita HealthChanged en el mismo frame.
+            HandlePickups();
 
             // RefreshHud DESPUÉS del combate: garantiza que en el frame de muerte el HUD
             // emita vida = 0 ANTES de que HandleGameState pause el loop.
@@ -230,11 +252,11 @@ namespace OptimizationGame.Systems
 
                     if (!enemy.IsAlive && _enemyViews.ContainsKey(enemy))
                     {
-                        // Bloque B: tirar drop al morir. Aún NO se spawnea ni se aplica nada;
-                        // solo se loguea. La DropTable viaja en el EnemyModel (copiada del tipo).
-                        if (_dropSystem.TryRollDrop(enemy.DropTable, out var pickup))
+                        // Bloque C: tirar drop al morir y, si sale, spawnear pickup visible
+                        // en la posición del enemigo. La DropTable viaja en el EnemyModel.
+                        if (_dropSystem.TryRollDrop(enemy.DropTable, out var pickupData))
                         {
-                            Debug.Log($"Drop rolled: {pickup.DisplayName}");
+                            SpawnPickup(pickupData, enemy.Position);
                         }
 
                         var enemyView = _enemyViews[enemy];
@@ -274,6 +296,74 @@ namespace OptimizationGame.Systems
                     _combatSystem.ApplyEnemyDamageToPlayer(enemy, _playerModel);
                     enemy.RegisterAttack(EnemyDamageInterval);
                 }
+            }
+        }
+
+        // Crea el PickupModel, pide una EntityView al pool ("Pickup") y la registra.
+        // Si el pool no tiene la key "Pickup" configurada, degrada con warning (no crashea).
+        private void SpawnPickup(PickupData data, Vector3 position)
+        {
+            if (data == null || _pickupSystem == null)
+                return;
+
+            var view = _objectPool.Spawn("Pickup", position);
+            if (view == null)
+            {
+                if (!_loggedMissingPickupPool)
+                {
+                    Debug.LogWarning("GameplayOrchestratorSystem: pool 'Pickup' no configurado (prefab faltante). El drop no se mostrará.");
+                    _loggedMissingPickupPool = true;
+                }
+                return;
+            }
+
+            view.SetColor(data.DebugColor);
+
+            var model = new PickupModel(_nextPickupId++, data, position, PickupCollectRadius);
+            _pickupViews[model] = view;
+            _pickupSystem.AddPickup(model);
+        }
+
+        // Aplica los efectos de los pickups recogidos, devuelve sus views al pool y limpia.
+        private void HandlePickups()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var collected = _pickupSystem.CollectedPickups;
+            if (collected.Count == 0)
+                return;
+
+            for (int i = 0; i < collected.Count; i++)
+            {
+                var model = collected[i];
+                ApplyPickupEffect(model.Data);
+
+                if (_pickupViews.TryGetValue(model, out var view))
+                {
+                    _objectPool.Despawn("Pickup", view);
+                    _pickupViews.Remove(model);
+                }
+            }
+
+            _pickupSystem.ClearCollectedPickups();
+        }
+
+        private void ApplyPickupEffect(PickupData data)
+        {
+            if (data == null)
+                return;
+
+            switch (data.Kind)
+            {
+                case PickupKind.Heal:
+                    // El HealthChanged se emite en RefreshHud (push por diff) este mismo frame.
+                    _playerModel.Heal(data.Amount);
+                    break;
+                case PickupKind.Speed:
+                    _applySpeedBoost?.Invoke(data.Amount, data.Duration);
+                    break;
+                // Weapon/Shield: bloque futuro. No-op por ahora.
             }
         }
 
