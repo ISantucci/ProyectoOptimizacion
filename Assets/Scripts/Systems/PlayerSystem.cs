@@ -9,16 +9,21 @@ namespace OptimizationGame.Systems
     {
         private PlayerModel _model;
         private PlayerConfig _config;
+        private WeaponData _baseWeapon;
+        private WeaponData _activeWeapon;
         private Vector3 _moveInput;
         private Vector3 _moveDirection;
         private float _fireCooldownTimer;
 
         public PlayerModel Model => _model;
 
-        public PlayerSystem(PlayerModel model, PlayerConfig config)
+        public PlayerSystem(PlayerModel model, PlayerConfig config, WeaponData baseWeapon)
         {
             _model = model;
             _config = config;
+            _baseWeapon = baseWeapon;
+            // Por ahora el arma activa es siempre la base. Pickups/armas temporales: bloque futuro.
+            _activeWeapon = _baseWeapon;
             _fireCooldownTimer = 0;
         }
 
@@ -56,7 +61,8 @@ namespace OptimizationGame.Systems
 
         public void Fire()
         {
-            _fireCooldownTimer = _config.FireCooldown;
+            // Lee del arma activa si existe; fallback a PlayerConfig (legacy) si es null.
+            _fireCooldownTimer = _activeWeapon != null ? _activeWeapon.FireCooldown : _config.FireCooldown;
         }
 
         public Vector3 GetFireDirection()
@@ -69,11 +75,16 @@ namespace OptimizationGame.Systems
 
         public ProjectileModel CreateProjectile(int projectileId)
         {
+            // Datos del proyectil desde el arma activa; fallback a PlayerConfig (legacy) si es null.
+            float speed = _activeWeapon != null ? _activeWeapon.ProjectileSpeed : _config.ProjectileSpeed;
+            float damage = _activeWeapon != null ? _activeWeapon.Damage : _config.ProjectileDamage;
+            float maxDistance = _activeWeapon != null ? _activeWeapon.ProjectileMaxDistance : _config.ProjectileMaxDistance;
+
             var projectile = new ProjectileModel(
                 projectileId,
-                _config.ProjectileSpeed,
-                _config.ProjectileDamage,
-                _config.ProjectileMaxDistance
+                speed,
+                damage,
+                maxDistance
             );
             projectile.Position = _model.Position;
             projectile.Direction = GetFireDirection();

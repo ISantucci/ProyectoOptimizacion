@@ -26,6 +26,10 @@ namespace OptimizationGame.Core
         [SerializeField] private MonoBehaviours.InputReader _inputReader;
         [SerializeField] private PoolConfig _poolConfig;
 
+        // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
+        // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
+        [SerializeField] private WeaponData _baseWeapon;
+
         // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
         [SerializeField] private GameFlowConfig _gameFlowConfig;
         [SerializeField] private List<RoomSpawnGroup> _roomSpawnGroups = new();
@@ -54,7 +58,7 @@ namespace OptimizationGame.Core
         public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
         public event Action<string> WeaponChanged;               // (weaponName)
 
-        // Nombre de arma actual (fuente temporal: PlayerConfig.WeaponName).
+        // Nombre de arma actual (fuente: WeaponData.DisplayName, fallback PlayerConfig.WeaponName).
         private string _weaponName;
 
         private void Awake()
@@ -69,11 +73,22 @@ namespace OptimizationGame.Core
         private void InitializeSystems()
         {
             var playerConfig = new PlayerConfig();
-            _weaponName = playerConfig.WeaponName;
+
+            // Nombre de arma para el HUD: desde WeaponData si está asignado; si no, legacy + warning.
+            if (_baseWeapon != null)
+            {
+                _weaponName = _baseWeapon.DisplayName;
+            }
+            else
+            {
+                _weaponName = playerConfig.WeaponName;
+                Debug.LogWarning("GameManager: _baseWeapon sin asignar en el Inspector. Disparo y HUD usan valores legacy de PlayerConfig.");
+            }
+
             _playerModel = new PlayerModel(playerConfig.MaxHealth, playerConfig.MoveSpeed);
             _playerModel.Position = _playerTransform.position;
 
-            _playerSystem = new PlayerSystem(_playerModel, playerConfig);
+            _playerSystem = new PlayerSystem(_playerModel, playerConfig, _baseWeapon);
             _enemySystem = new EnemySystem(() => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
             _waveSystem = new WaveSystem();
