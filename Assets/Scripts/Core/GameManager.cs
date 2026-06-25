@@ -64,6 +64,8 @@ namespace OptimizationGame.Core
         public event Action<string> WeaponChanged;               // (weaponName)
         // Powerup temporal activo (Speed). (active, displayName, icon, remaining, duration)
         public event Action<bool, string, Sprite, float, float> PowerUpChanged;
+        // Arma temporal activa (HUD separado del PowerUp). (active, displayName, icon, remaining, duration)
+        public event Action<bool, string, Sprite, float, float> TemporaryWeaponChanged;
 
         // Nombre de arma actual (fuente: WeaponData.DisplayName, fallback PlayerConfig.WeaponName).
         private string _weaponName;
@@ -150,12 +152,19 @@ namespace OptimizationGame.Core
                 _pickupSystem,
                 _pickupViews,
                 (multiplier, duration, displayName, icon) => _playerSystem.ApplySpeedBoost(multiplier, duration, displayName, icon),
+                (weapon, duration, displayName, icon) => _playerSystem.ApplyTemporaryWeapon(weapon, duration, displayName, icon),
                 () => (_playerSystem.HasActiveSpeedBoost,
                        _playerSystem.SpeedBoostName,
                        _playerSystem.SpeedBoostIcon,
                        _playerSystem.SpeedBoostRemaining,
                        _playerSystem.SpeedBoostDuration),
                 (active, displayName, icon, remaining, duration) => PowerUpChanged?.Invoke(active, displayName, icon, remaining, duration),
+                () => (_playerSystem.HasTemporaryWeapon,
+                       _playerSystem.TemporaryWeaponName,
+                       _playerSystem.TemporaryWeaponIcon,
+                       _playerSystem.TemporaryWeaponRemaining,
+                       _playerSystem.TemporaryWeaponDuration),
+                (active, displayName, icon, remaining, duration) => NotifyTemporaryWeaponChanged(active, displayName, icon, remaining, duration),
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
@@ -222,10 +231,20 @@ namespace OptimizationGame.Core
             WeaponChanged?.Invoke(_weaponName);
             // Powerup arranca inactivo: la UI del powerup queda oculta hasta recoger un Speed.
             PowerUpChanged?.Invoke(false, null, null, 0f, 0f);
+            // Arma temporal arranca inactiva: el Weapon HUD queda oculto hasta recoger un arma.
+            TemporaryWeaponChanged?.Invoke(false, null, null, 0f, 0f);
 
             // Si UIManager.Start corrió antes que el primer Tick, el orquestador re-emitirá
             // con datos ya correctos en su primer RefreshHud.
             _orchestrator.ResetHudCaches();
+        }
+
+        // Punto de notificación controlado del estado del arma temporal hacia la UI.
+        // Lo invoca el orquestador desde su Tick (no es Update). GameManager sigue siendo
+        // dueño del evento; el orquestador no lo dispara directo.
+        public void NotifyTemporaryWeaponChanged(bool active, string displayName, Sprite icon, float remaining, float duration)
+        {
+            TemporaryWeaponChanged?.Invoke(active, displayName, icon, remaining, duration);
         }
 
         // --- Callbacks no recurrentes invocados por InputReader ---
@@ -244,11 +263,37 @@ namespace OptimizationGame.Core
             var projectile = _playerSystem.CreateProjectile(_projectileSystem.Projectiles.Count);
             _projectileSystem.AddProjectile(projectile);
 
-            var view = _objectPool.Spawn("Projectile", projectile.Position);
+            // Pool key del proyectil: única fuente de verdad = projectile.PoolKey
+            // (la decide PlayerSystem). Spawn y Despawn SIEMPRE usan esta misma key:
+            // nunca se spawnea con una key distinta a la guardada en el modelo.
+            // Registro lazy: si la key es específica y aún no está en el pool, registrar
+            // el prefab del arma. Si el prefab falta en ese punto (no debería ocurrir,
+            // PlayerSystem solo deriva key especial si hay prefab), se aborta este disparo
+            // sin spawnear con otra key.
+            if (projectile.PoolKey != "Projectile" && !_objectPool.HasPrefab(projectile.PoolKey))
+            {
+                var weaponPrefab = _playerSystem.ActiveProjectilePrefab;
+                if (weaponPrefab == null)
+                {
+                    Debug.LogWarning($"GameManager: falta ProjectilePrefab para la pool key '{projectile.PoolKey}'. No se spawnea este proyectil.");
+                    _projectileSystem.RemoveProjectile(projectile);
+                    return;
+                }
+
+                _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab.gameObject);
+            }
+
+            var view = _objectPool.Spawn(projectile.PoolKey, projectile.Position);
             if (view != null)
             {
                 view.SetRotation(Quaternion.LookRotation(_playerSystem.GetFireDirection()));
                 _projectileViews[projectile] = view;
+            }
+            else
+            {
+                // Spawn falló: no dejar el modelo sin view (evita un proyectil fantasma
+                // que el orquestador no podría sincronizar ni despawnear visualmente).
+                _projectileSystem.RemoveProjectile(projectile);
             }
         }
 

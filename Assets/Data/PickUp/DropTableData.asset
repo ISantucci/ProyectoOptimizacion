@@ -14,10 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.DropTableData
   overallDropChance: 1
   categoryEntries:
-  - category: 1
-    weight: 100
+  - category: 0
+    weight: 50
     drops:
-    - pickup: {fileID: 11400000, guid: 9bb802b8143851b44aaf5c8591792d32, type: 2}
-      weight: 50
+    - pickup: {fileID: 11400000, guid: 4bb8e9747f4cdc943ba1cb453217a277, type: 2}
+      weight: 100
+  - category: 1
+    weight: 50
+    drops:
     - pickup: {fileID: 11400000, guid: b1a3118cc042eb14d9a62e1232f03f8a, type: 2}
-      weight: 50
+      weight: 100

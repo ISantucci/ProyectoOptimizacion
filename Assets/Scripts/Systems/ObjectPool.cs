@@ -12,11 +12,19 @@ namespace OptimizationGame.Systems
 
         public void RegisterPrefab(string poolKey, GameObject prefab)
         {
+            // Idempotente: si la key ya existe, NO se pisa el prefab ni se vacía la cola.
+            // Seguro para registro lazy repetido (mismo arma disparando varias veces).
             if (!_prefabs.ContainsKey(poolKey))
             {
                 _prefabs[poolKey] = prefab;
                 _pools[poolKey] = new Queue<EntityView>();
             }
+        }
+
+        // Permite al composition root decidir si hace falta registrar lazy un prefab nuevo.
+        public bool HasPrefab(string poolKey)
+        {
+            return _prefabs.ContainsKey(poolKey);
         }
 
         public void Prewarm(string poolKey, int count)
