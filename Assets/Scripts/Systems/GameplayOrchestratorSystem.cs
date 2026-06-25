@@ -47,6 +47,10 @@ namespace OptimizationGame.Systems
         private readonly List<RoomSpawnGroup> _roomSpawnGroups;
         private readonly Transform _playerTransform;
 
+        // DropSystem: clase pura, stateless. Instanciado aquí para no tocar el wiring de
+        // GameManager. NO es ITickable; solo se invoca puntualmente al morir un enemigo.
+        private readonly DropSystem _dropSystem = new DropSystem();
+
         // --- Salidas hacia GameManager (sin acoplar al tipo MonoBehaviour) ---
         private readonly Action<float, float> _raiseHealthChanged;
         private readonly Action<string, int, int, bool> _raiseWaveChanged;
@@ -226,6 +230,13 @@ namespace OptimizationGame.Systems
 
                     if (!enemy.IsAlive && _enemyViews.ContainsKey(enemy))
                     {
+                        // Bloque B: tirar drop al morir. Aún NO se spawnea ni se aplica nada;
+                        // solo se loguea. La DropTable viaja en el EnemyModel (copiada del tipo).
+                        if (_dropSystem.TryRollDrop(enemy.DropTable, out var pickup))
+                        {
+                            Debug.Log($"Drop rolled: {pickup.DisplayName}");
+                        }
+
                         var enemyView = _enemyViews[enemy];
                         _objectPool.Despawn("Enemy", enemyView);
                         _enemyViews.Remove(enemy);

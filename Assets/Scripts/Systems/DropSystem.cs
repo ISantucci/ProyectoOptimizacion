@@ -16,11 +16,20 @@ namespace OptimizationGame.Systems
         public bool TryRollDrop(EnemyTypeData enemyType, out PickupData pickup)
         {
             pickup = null;
-
             if (enemyType == null)
                 return false;
 
-            DropTableData table = enemyType.DropTable;
+            return TryRollDrop(enemyType.DropTable, out pickup);
+        }
+
+        /// <summary>
+        /// Overload desacoplado de EnemyTypeData: opera directo sobre la DropTableData.
+        /// Es el que conviene usar desde runtime (EnemyModel.DropTable).
+        /// </summary>
+        public bool TryRollDrop(DropTableData table, out PickupData pickup)
+        {
+            pickup = null;
+
             if (table == null)
                 return false;
 
