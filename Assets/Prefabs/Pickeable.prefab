@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 6257362724492090029}
   - component: {fileID: 5799960703361107819}
-  - component: {fileID: 1796880810523950703}
   - component: {fileID: 1100332559926195518}
   m_Layer: 0
   m_Name: Pickeable
@@ -57,18 +56,6 @@ CapsuleCollider:
   m_Height: 2
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &1796880810523950703
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1708123539570047673}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 48bd6b9aa0637d2478cf3f7b9189bfff, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.MonoBehaviours.EntityView
 --- !u!212 &1100332559926195518
 SpriteRenderer:
   serializedVersion: 2

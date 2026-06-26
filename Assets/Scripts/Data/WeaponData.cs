@@ -1,4 +1,3 @@
-using OptimizationGame.MonoBehaviours;
 using UnityEngine;
 
 namespace OptimizationGame.Data
@@ -18,12 +17,12 @@ namespace OptimizationGame.Data
         public Color DebugColor = Color.white;
 
         // Prefab visual propio del proyectil de esta arma. OPCIONAL: si queda null, el
-        // disparo usa el proyectil default (key "Projectile"). El prefab debe tener EntityView.
-        [SerializeField] private EntityView projectilePrefab;
+        // disparo usa el proyectil default (key "Projectile"). El pool le crea su EntityView.
+        [SerializeField] private GameObject projectilePrefab;
         // Radio de daño en área al impactar. 0 = daño normal a un solo enemigo. >0 = área.
         [SerializeField] private float areaRadius;
 
-        public EntityView ProjectilePrefab => projectilePrefab;
+        public GameObject ProjectilePrefab => projectilePrefab;
         public float AreaRadius => areaRadius;
         public bool HasAreaDamage => areaRadius > 0f;
     }

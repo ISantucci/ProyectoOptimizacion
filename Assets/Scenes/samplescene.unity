@@ -514,7 +514,7 @@ MonoBehaviour:
   _projectilePrefab: {fileID: 6787997616460462462, guid: 96d7ef1c9a6d19348a6526885e539812, type: 3}
   _pickupPrefab: {fileID: 1708123539570047673, guid: 2618f222b2a6bf44cae0e4d2ec48cd35, type: 3}
   _updateManager: {fileID: 1294942944}
-  _mainCamera: {fileID: 0}
+  _mainCamera: {fileID: 1911453334}
   _poolConfig: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
   _baseWeapon: {fileID: 11400000, guid: 522da670fba038543a80967d8e97e483, type: 2}
   _gameFlowConfig: {fileID: 11400000, guid: 71835a329537b264781b20af61aaa390, type: 2}
@@ -1039,6 +1039,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+--- !u!20 &1911453334 stripped
+Camera:
+  m_CorrespondingSourceObject: {fileID: 3068296675118172681, guid: 181d6a4a08954504d8713ec5d85e4f4a, type: 3}
+  m_PrefabInstance: {fileID: 7456130474383367127}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1916299574
 GameObject:
   m_ObjectHideFlags: 0

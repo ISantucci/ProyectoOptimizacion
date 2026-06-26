@@ -294,7 +294,7 @@ namespace OptimizationGame.Core
                     return;
                 }
 
-                _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab.gameObject);
+                _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab);
             }
 
             var view = _objectPool.Spawn(projectile.PoolKey, projectile.Position);

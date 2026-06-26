@@ -1,7 +1,6 @@
 using OptimizationGame.Data;
 using OptimizationGame.Interfaces;
 using OptimizationGame.Models;
-using OptimizationGame.MonoBehaviours;
 using UnityEngine;
 
 namespace OptimizationGame.Systems
@@ -37,7 +36,7 @@ namespace OptimizationGame.Systems
         // Prefab del proyectil del arma activa (puede ser null = usar proyectil default).
         // GameManager lo consulta para registrar lazy el prefab en el ObjectPool. PlayerSystem
         // NO conoce el ObjectPool: solo expone el dato.
-        public EntityView ActiveProjectilePrefab => _activeWeapon != null ? _activeWeapon.ProjectilePrefab : null;
+        public GameObject ActiveProjectilePrefab => _activeWeapon != null ? _activeWeapon.ProjectilePrefab : null;
 
         // --- Estado del speed boost expuesto para la UI (solo lectura) ---
         public bool HasActiveSpeedBoost => _speedBoostTimer > 0f;
