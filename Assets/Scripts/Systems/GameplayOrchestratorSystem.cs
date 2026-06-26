@@ -84,7 +84,8 @@ namespace OptimizationGame.Systems
         private readonly Action<float, float> _raiseHealthChanged;
         private readonly Action<string, int, int, bool> _raiseWaveChanged;
         private readonly Action<int> _raiseEnemiesLeftChanged;
-        private readonly Action _endGameplay;
+        // bool = victory (true) / defeat (false). GameManager emite el evento de UI según el flag.
+        private readonly Action<bool> _endGameplay;
 
         // Cooldown de ataque por enemigo (el timer vive en cada EnemyModel).
         private const float EnemyDamageInterval = 1f;
@@ -120,7 +121,7 @@ namespace OptimizationGame.Systems
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
-            Action endGameplay)
+            Action<bool> endGameplay)
         {
             _playerModel = playerModel;
             _enemySystem = enemySystem;
@@ -543,7 +544,7 @@ namespace OptimizationGame.Systems
             if (!_playerModel.IsAlive)
             {
                 _gameState = GameState.Defeat;
-                _endGameplay?.Invoke();
+                _endGameplay?.Invoke(false);
                 Debug.Log("GAME OVER - PLAYER DEFEATED");
                 return;
             }
@@ -560,7 +561,7 @@ namespace OptimizationGame.Systems
                 else
                 {
                     _gameState = GameState.Victory;
-                    _endGameplay?.Invoke();
+                    _endGameplay?.Invoke(true);
                     Debug.Log("VICTORY - ALL ROOMS COMPLETED");
                 }
             }

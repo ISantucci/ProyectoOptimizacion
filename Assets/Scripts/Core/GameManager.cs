@@ -4,6 +4,7 @@ using OptimizationGame.Data;
 using OptimizationGame.Models;
 using OptimizationGame.Systems;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace OptimizationGame.Core
 {
@@ -39,6 +40,11 @@ namespace OptimizationGame.Core
         [SerializeField] private GameFlowConfig _gameFlowConfig;
         [SerializeField] private List<RoomSpawnGroup> _roomSpawnGroups = new();
 
+        // Menú de inicio OPT-IN. Default false = flujo actual intacto (arranca solo).
+        // Si se activa, el gameplay arranca pausado mostrando el Start Panel hasta que
+        // un botón llame StartGameFromUI(). El botón se conecta a mano en Unity.
+        [SerializeField] private bool _startWithMenu = false;
+
         private PlayerSystem _playerSystem;
         private EnemySystem _enemySystem;
         private ProjectileSystem _projectileSystem;
@@ -61,6 +67,22 @@ namespace OptimizationGame.Core
         // GameManager es dueño de la pausa del loop y del bloqueo del disparo.
         private bool _gameplayEnded;
 
+        // Estado mínimo de juego. Gobierna qué transiciones de UI son válidas:
+        // solo se pausa/despausa desde Playing/Paused; Victory/Defeat son terminales;
+        // Menu solo existe si _startWithMenu está activo.
+        private enum GameState { Menu, Playing, Paused, Victory, Defeat }
+        private GameState _gameState;
+
+        // --- Eventos de flujo hacia UIManager ---
+        public event Action<bool> PauseChanged; // true = pausado, false = reanudado
+        public event Action Victory;
+        public event Action Defeat;
+        public event Action GameStarted;        // se dispara al salir del Start Menu
+
+        // UIManager consulta esto en su Start (Awake del GM ya corrió) para mostrar
+        // el Start Panel sin depender del orden de ejecución de scripts.
+        public bool IsStartMenuActive => _gameState == GameState.Menu;
+
         // --- HUD: eventos push (clases puras, sin MonoBehaviours nuevos) ---
         // UIManager se suscribe a estos eventos. El orquestador los dispara vía delegates.
         public event Action<float, float> HealthChanged;          // (current, max)
@@ -81,7 +103,20 @@ namespace OptimizationGame.Core
             InitializePools();
             CreateOrchestrator();
             RegisterSystems();
-            StartGameplay();
+
+            if (_startWithMenu)
+            {
+                // Arranca pausado en el menú: el loop no simula gameplay hasta
+                // StartGameFromUI(). InputReader igual tickea (always-tickable),
+                // pero TogglePause se ignora en estado Menu.
+                _gameState = GameState.Menu;
+                _updateManager.SetPaused(true);
+            }
+            else
+            {
+                StartGameplay();
+                _gameState = GameState.Playing;
+            }
         }
 
         // InputReader es clase pura y posee InputActions no manejadas: liberarlas acá
@@ -195,7 +230,8 @@ namespace OptimizationGame.Core
 
             _inputReader = new MonoBehaviours.InputReader(this, _mainCamera);
             _inputReader.Initialize();
-            _updateManager.Register(_inputReader);
+            // InputReader NO se pausa: debe seguir leyendo Escape para poder despausar.
+            _updateManager.Register(_inputReader, pauseWithGameplay: false);
 
             _updateManager.Register(_playerSystem);
             _updateManager.Register(_enemySystem);
@@ -220,12 +256,94 @@ namespace OptimizationGame.Core
             _waveSystem.StartRoom(_roomSystem.CurrentRoom);
         }
 
-        // Llamado por el orquestador al entrar en Defeat/Victory. Pausa el loop central
-        // y bloquea el disparo. El último HUD (vida = 0) ya se emitió antes de esta llamada.
-        private void EndGameplay()
+        // Llamado por el orquestador al entrar en Defeat/Victory. Pausa el loop central,
+        // bloquea el disparo y notifica a la UI el panel correspondiente.
+        // El último HUD (vida = 0) ya se emitió antes de esta llamada.
+        private void EndGameplay(bool victory)
         {
             _gameplayEnded = true;
-            _updateManager.IsPaused = true;
+            _gameState = victory ? GameState.Victory : GameState.Defeat;
+            _updateManager.SetPaused(true);
+
+            if (victory)
+                Victory?.Invoke();
+            else
+                Defeat?.Invoke();
+        }
+
+        /// <summary>
+        /// Alterna pausa/reanudar. Lo invoca InputReader al presionar Escape.
+        /// Solo válido en Playing/Paused: Victory/Defeat son terminales y el menú
+        /// de inicio no se puede pausar.
+        /// </summary>
+        public void TogglePause()
+        {
+            if (_gameState != GameState.Playing && _gameState != GameState.Paused)
+                return;
+
+            bool nextPaused = !_updateManager.IsPaused;
+            _updateManager.SetPaused(nextPaused);
+            _gameState = nextPaused ? GameState.Paused : GameState.Playing;
+            PauseChanged?.Invoke(nextPaused);
+        }
+
+        /// <summary>
+        /// Reanuda el juego SOLO si está pausado. A diferencia de TogglePause, es
+        /// idempotente: si no está en Paused no hace nada. La invoca UIManager desde
+        /// el botón Resume del Pause Menu.
+        /// </summary>
+        public void ResumeGame()
+        {
+            if (_gameState != GameState.Paused)
+                return;
+
+            _updateManager.SetPaused(false);
+            _gameState = GameState.Playing;
+            PauseChanged?.Invoke(false);
+        }
+
+        /// <summary>
+        /// Reinicia la partida recargando la escena activa. Reconstruye todo el
+        /// composition root desde cero (Awake), por lo que no hace falta resetear
+        /// estado a mano. La invoca UIManager desde el botón Restart.
+        /// </summary>
+        public void RestartGame()
+        {
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
+        /// <summary>
+        /// Placeholder seguro de Options. Todavía no hay menú real de opciones; solo
+        /// deja traza para verificar el wiring del botón. La invoca UIManager.
+        /// </summary>
+        public void OpenOptions()
+        {
+            Debug.Log("GameManager: OpenOptions() (placeholder, sin menú de opciones aún).");
+        }
+
+        /// <summary>
+        /// Placeholder seguro de Return to Main Menu. Todavía no hay Main Menu como
+        /// sistema/escena propia; solo deja traza para verificar el wiring del botón.
+        /// La invoca UIManager.
+        /// </summary>
+        public void ReturnToMainMenu()
+        {
+            Debug.Log("GameManager: ReturnToMainMenu() (placeholder, sin Main Menu aún).");
+        }
+
+        /// <summary>
+        /// Inicia el gameplay desde el Start Menu. Conectar un botón de UI a este método
+        /// manualmente en Unity (OnClick). Solo actúa si _startWithMenu está activo.
+        /// </summary>
+        public void StartGameFromUI()
+        {
+            if (_gameState != GameState.Menu)
+                return;
+
+            StartGameplay();
+            _gameState = GameState.Playing;
+            _updateManager.SetPaused(false);
+            GameStarted?.Invoke();
         }
 
         /// <summary>
@@ -265,9 +383,9 @@ namespace OptimizationGame.Core
 
         public void FireProjectile()
         {
-            // Bloqueo tras fin de juego: no se crea ningún proyectil aunque InputReader
-            // siga enviando el click.
-            if (_gameplayEnded)
+            // Bloqueo tras fin de juego o durante pausa/menú: no se crea ningún proyectil
+            // aunque InputReader siga enviando el click (sigue tickeando siempre).
+            if (_gameplayEnded || _updateManager.IsPaused)
                 return;
 
             if (!_playerSystem.CanFire())

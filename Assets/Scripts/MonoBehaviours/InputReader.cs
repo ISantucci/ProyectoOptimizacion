@@ -80,9 +80,22 @@ namespace OptimizationGame.MonoBehaviours
             if (_gameplayActions == null)
                 return;
 
+            // Pausa primero: alterna pausa/reanudar con Escape. InputReader sigue
+            // tickeando durante la pausa (registrado como always-tickable), por eso
+            // este chequeo funciona aun con el gameplay detenido.
+            ReadPauseInput();
+
             ReadMovementInput();
             ReadLookInput();
             ReadFireInput();
+        }
+
+        private void ReadPauseInput()
+        {
+            if (_pauseAction.WasPressedThisFrame())
+            {
+                _gameManager.TogglePause();
+            }
         }
 
         private void ReadMovementInput()

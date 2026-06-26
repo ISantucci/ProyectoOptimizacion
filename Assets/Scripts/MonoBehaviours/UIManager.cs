@@ -35,7 +35,22 @@ namespace OptimizationGame.MonoBehaviours
             public TMP_Text WeaponText;
         }
 
+        // Referencias del Pause Menu agrupadas para mantener el Inspector ordenado.
+        // No es un MonoBehaviour: es una clase serializable interna sin lógica.
+        // El panel se sigue mostrando/ocultando por el evento PauseChanged del GameManager;
+        // los botones solo delegan acciones de flujo al GameManager (sin decidir estado acá).
+        [Serializable]
+        private class PauseMenuReferences
+        {
+            public Button PauseIconButton;       // ícono in-game para abrir la pausa
+            public Button ResumeButton;
+            public Button RestartButton;
+            public Button OptionsButton;
+            public Button ReturnToMainMenuButton;
+        }
+
         [SerializeField] private GameManager _gameManager;
+        [SerializeField] private PauseMenuReferences _pauseMenu = new PauseMenuReferences();
         [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
@@ -49,6 +64,14 @@ namespace OptimizationGame.MonoBehaviours
         // como Filled / Vertical / Origin Top para vaciarse hacia abajo según Duration.
         [SerializeField] private CanvasGroup weaponPowerUpCanvasGroup;
         [SerializeField] private Image weaponPowerUpIconFill;
+
+        // Paneles de flujo (pausa/victoria/derrota/inicio). Opcionales: si quedan sin
+        // asignar, SetPanel no hace nada (no crashea). Mostrar/ocultar vía CanvasGroup
+        // para no togglear GameObjects ni reconstruir jerarquías.
+        [SerializeField] private CanvasGroup startPanel;
+        [SerializeField] private CanvasGroup pausePanel;
+        [SerializeField] private CanvasGroup victoryPanel;
+        [SerializeField] private CanvasGroup defeatPanel;
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
@@ -72,6 +95,15 @@ namespace OptimizationGame.MonoBehaviours
             }
 
             Subscribe();
+            WireButtons();
+
+            // Estado inicial de los paneles de flujo: todos ocultos salvo el Start Menu
+            // si el GameManager arrancó en ese estado.
+            SetPanel(pausePanel, false);
+            SetPanel(victoryPanel, false);
+            SetPanel(defeatPanel, false);
+            SetPanel(startPanel, _gameManager.IsStartMenuActive);
+
             // Empujar estado inicial después de suscribir, sin depender del orden de Start.
             _gameManager.BroadcastInitialUiState();
         }
@@ -79,7 +111,45 @@ namespace OptimizationGame.MonoBehaviours
         private void OnDestroy()
         {
             Unsubscribe();
+            UnwireButtons();
         }
+
+        // --- Wiring de botones del Pause Menu (sin Update, sin lógica de gameplay) ---
+
+        private void WireButtons()
+        {
+            if (_pauseMenu.PauseIconButton != null)
+                _pauseMenu.PauseIconButton.onClick.AddListener(OnPauseClicked);
+            if (_pauseMenu.ResumeButton != null)
+                _pauseMenu.ResumeButton.onClick.AddListener(OnResumeClicked);
+            if (_pauseMenu.RestartButton != null)
+                _pauseMenu.RestartButton.onClick.AddListener(OnRestartClicked);
+            if (_pauseMenu.OptionsButton != null)
+                _pauseMenu.OptionsButton.onClick.AddListener(OnOptionsClicked);
+            if (_pauseMenu.ReturnToMainMenuButton != null)
+                _pauseMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
+        }
+
+        private void UnwireButtons()
+        {
+            if (_pauseMenu.PauseIconButton != null)
+                _pauseMenu.PauseIconButton.onClick.RemoveListener(OnPauseClicked);
+            if (_pauseMenu.ResumeButton != null)
+                _pauseMenu.ResumeButton.onClick.RemoveListener(OnResumeClicked);
+            if (_pauseMenu.RestartButton != null)
+                _pauseMenu.RestartButton.onClick.RemoveListener(OnRestartClicked);
+            if (_pauseMenu.OptionsButton != null)
+                _pauseMenu.OptionsButton.onClick.RemoveListener(OnOptionsClicked);
+            if (_pauseMenu.ReturnToMainMenuButton != null)
+                _pauseMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
+        }
+
+        // Cada callback solo delega al GameManager: UIManager no decide estado de juego.
+        private void OnPauseClicked() => _gameManager.TogglePause();
+        private void OnResumeClicked() => _gameManager.ResumeGame();
+        private void OnRestartClicked() => _gameManager.RestartGame();
+        private void OnOptionsClicked() => _gameManager.OpenOptions();
+        private void OnReturnToMainMenuClicked() => _gameManager.ReturnToMainMenu();
 
         private void Subscribe()
         {
@@ -92,6 +162,10 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.WeaponChanged += UpdateWeapon;
             _gameManager.PowerUpChanged += UpdatePowerUp;
             _gameManager.TemporaryWeaponChanged += UpdateTemporaryWeapon;
+            _gameManager.PauseChanged += OnPauseChanged;
+            _gameManager.Victory += OnVictory;
+            _gameManager.Defeat += OnDefeat;
+            _gameManager.GameStarted += OnGameStarted;
             _subscribed = true;
         }
 
@@ -106,7 +180,47 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.WeaponChanged -= UpdateWeapon;
             _gameManager.PowerUpChanged -= UpdatePowerUp;
             _gameManager.TemporaryWeaponChanged -= UpdateTemporaryWeapon;
+            _gameManager.PauseChanged -= OnPauseChanged;
+            _gameManager.Victory -= OnVictory;
+            _gameManager.Defeat -= OnDefeat;
+            _gameManager.GameStarted -= OnGameStarted;
             _subscribed = false;
+        }
+
+        // --- Paneles de flujo (push por evento del GameManager) ---
+
+        private void OnPauseChanged(bool paused)
+        {
+            SetPanel(pausePanel, paused);
+        }
+
+        private void OnVictory()
+        {
+            // Victory tapa la pausa si estaba visible.
+            SetPanel(pausePanel, false);
+            SetPanel(victoryPanel, true);
+        }
+
+        private void OnDefeat()
+        {
+            SetPanel(pausePanel, false);
+            SetPanel(defeatPanel, true);
+        }
+
+        private void OnGameStarted()
+        {
+            SetPanel(startPanel, false);
+        }
+
+        /// <summary>Muestra/oculta un panel vía CanvasGroup sin togglear GameObjects.</summary>
+        private void SetPanel(CanvasGroup panel, bool visible)
+        {
+            if (panel == null)
+                return;
+
+            panel.alpha = visible ? 1f : 0f;
+            panel.interactable = visible;
+            panel.blocksRaycasts = visible;
         }
 
         /// <summary>Muestra/oculta los Canvas dinámicos del HUD.</summary>
