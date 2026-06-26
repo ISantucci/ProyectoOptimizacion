@@ -26,7 +26,9 @@ namespace OptimizationGame.Core
         // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
         [SerializeField] private GameObject _pickupPrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
-        [SerializeField] private MonoBehaviours.InputReader _inputReader;
+        // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
+        // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
+        [SerializeField] private Camera _mainCamera;
         [SerializeField] private PoolConfig _poolConfig;
 
         // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
@@ -46,6 +48,9 @@ namespace OptimizationGame.Core
         private PickupSystem _pickupSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
+
+        // InputReader ya no es MonoBehaviour: GameManager la crea, inicializa y posee.
+        private MonoBehaviours.InputReader _inputReader;
 
         private PlayerModel _playerModel;
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
@@ -77,6 +82,13 @@ namespace OptimizationGame.Core
             CreateOrchestrator();
             RegisterSystems();
             StartGameplay();
+        }
+
+        // InputReader es clase pura y posee InputActions no manejadas: liberarlas acá
+        // para evitar leaks (reemplaza al antiguo OnDisable del componente).
+        private void OnDestroy()
+        {
+            _inputReader?.Dispose();
         }
 
         private void InitializeSystems()
@@ -176,12 +188,14 @@ namespace OptimizationGame.Core
         private void RegisterSystems()
         {
             // InputReader primero: el input del frame se lee antes de que PlayerSystem
-            // actualice movimiento/disparo. Es un MonoBehaviour ya existente que ahora
-            // implementa ITickable (no se agrega ningún MonoBehaviour nuevo).
-            if (_inputReader != null)
-                _updateManager.Register(_inputReader);
-            else
-                Debug.LogError("GameManager: _inputReader sin asignar en el Inspector. El input no se leerá.");
+            // actualice movimiento/disparo. Ahora es una clase pura (ITickable): la crea,
+            // inicializa y registra GameManager. No se agrega ningún MonoBehaviour nuevo.
+            if (_mainCamera == null)
+                Debug.LogError("GameManager: _mainCamera sin asignar en el Inspector. El aim no funcionará.");
+
+            _inputReader = new MonoBehaviours.InputReader(this, _mainCamera);
+            _inputReader.Initialize();
+            _updateManager.Register(_inputReader);
 
             _updateManager.Register(_playerSystem);
             _updateManager.Register(_enemySystem);
