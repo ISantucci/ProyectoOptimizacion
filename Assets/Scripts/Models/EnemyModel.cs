@@ -15,6 +15,10 @@ namespace OptimizationGame.Models
         public float StoppingDistance { get; }
         public bool IsBoss { get; }
 
+        // Tabla de drops copiada del EnemyTypeData al crearse. Puede ser null (=> no dropea).
+        // No referencia el resto del ScriptableObject: solo este dato runtime.
+        public DropTableData DropTable { get; }
+
         // Cooldown de ataque por enemigo (estado puro, sin MonoBehaviour).
         // Inicia en 0 => el primer contacto pega de inmediato.
         private float _attackCooldownTimer;
@@ -44,6 +48,7 @@ namespace OptimizationGame.Models
             Damage = data.Damage;
             StoppingDistance = data.StoppingDistance;
             IsBoss = data.IsBoss;
+            DropTable = data.DropTable;
             Position = Vector3.zero;
         }
 

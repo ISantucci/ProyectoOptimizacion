@@ -22,9 +22,18 @@ namespace OptimizationGame.Core
         [SerializeField] private Transform _playerTransform;
         [SerializeField] private GameObject _enemyPrefab;
         [SerializeField] private GameObject _projectilePrefab;
+        // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
+        // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
+        [SerializeField] private GameObject _pickupPrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
-        [SerializeField] private MonoBehaviours.InputReader _inputReader;
+        // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
+        // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
+        [SerializeField] private Camera _mainCamera;
         [SerializeField] private PoolConfig _poolConfig;
+
+        // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
+        // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
+        [SerializeField] private WeaponData _baseWeapon;
 
         // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
         [SerializeField] private GameFlowConfig _gameFlowConfig;
@@ -36,12 +45,17 @@ namespace OptimizationGame.Core
         private WaveSystem _waveSystem;
         private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
+        private PickupSystem _pickupSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
+
+        // InputReader ya no es MonoBehaviour: GameManager la crea, inicializa y posee.
+        private MonoBehaviours.InputReader _inputReader;
 
         private PlayerModel _playerModel;
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
+        private Dictionary<PickupModel, MonoBehaviours.EntityView> _pickupViews = new();
 
         // Bloqueo de gameplay tras Victory/Defeat. Lo activa el orquestador vía EndGameplay().
         // GameManager es dueño de la pausa del loop y del bloqueo del disparo.
@@ -53,8 +67,12 @@ namespace OptimizationGame.Core
         public event Action<string, int, int, bool> WaveChanged;  // (waveName, currentIndex, totalWaves, isFinalWave)
         public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
         public event Action<string> WeaponChanged;               // (weaponName)
+        // Powerup temporal activo (Speed). (active, displayName, icon, remaining, duration)
+        public event Action<bool, string, Sprite, float, float> PowerUpChanged;
+        // Arma temporal activa (HUD separado del PowerUp). (active, displayName, icon, remaining, duration)
+        public event Action<bool, string, Sprite, float, float> TemporaryWeaponChanged;
 
-        // Nombre de arma actual (fuente temporal: PlayerConfig.WeaponName).
+        // Nombre de arma actual (fuente: WeaponData.DisplayName, fallback PlayerConfig.WeaponName).
         private string _weaponName;
 
         private void Awake()
@@ -66,19 +84,38 @@ namespace OptimizationGame.Core
             StartGameplay();
         }
 
+        // InputReader es clase pura y posee InputActions no manejadas: liberarlas acá
+        // para evitar leaks (reemplaza al antiguo OnDisable del componente).
+        private void OnDestroy()
+        {
+            _inputReader?.Dispose();
+        }
+
         private void InitializeSystems()
         {
             var playerConfig = new PlayerConfig();
-            _weaponName = playerConfig.WeaponName;
+
+            // Nombre de arma para el HUD: desde WeaponData si está asignado; si no, legacy + warning.
+            if (_baseWeapon != null)
+            {
+                _weaponName = _baseWeapon.DisplayName;
+            }
+            else
+            {
+                _weaponName = playerConfig.WeaponName;
+                Debug.LogWarning("GameManager: _baseWeapon sin asignar en el Inspector. Disparo y HUD usan valores legacy de PlayerConfig.");
+            }
+
             _playerModel = new PlayerModel(playerConfig.MaxHealth, playerConfig.MoveSpeed);
             _playerModel.Position = _playerTransform.position;
 
-            _playerSystem = new PlayerSystem(_playerModel, playerConfig);
+            _playerSystem = new PlayerSystem(_playerModel, playerConfig, _baseWeapon);
             _enemySystem = new EnemySystem(() => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
             _waveSystem = new WaveSystem();
             _roomSystem = new RoomSystem(_gameFlowConfig);
             _combatSystem = new CombatSystem();
+            _pickupSystem = new PickupSystem(() => _playerModel.Position);
         }
 
         private void InitializePools()
@@ -86,6 +123,13 @@ namespace OptimizationGame.Core
             _objectPool = new ObjectPool();
             _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
             _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
+
+            // Pickup: opcional. Si no hay prefab, no se registra la key y el spawn degrada
+            // con warning en el orquestador (sin crashear).
+            if (_pickupPrefab != null)
+                _objectPool.RegisterPrefab("Pickup", _pickupPrefab);
+            else
+                Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
 
             if (_poolConfig == null)
             {
@@ -95,6 +139,8 @@ namespace OptimizationGame.Core
 
             _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
+            if (_pickupPrefab != null)
+                _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -115,6 +161,22 @@ namespace OptimizationGame.Core
                 _projectileViews,
                 _roomSpawnGroups,
                 _playerTransform,
+                _pickupSystem,
+                _pickupViews,
+                (multiplier, duration, displayName, icon) => _playerSystem.ApplySpeedBoost(multiplier, duration, displayName, icon),
+                (weapon, duration, displayName, icon) => _playerSystem.ApplyTemporaryWeapon(weapon, duration, displayName, icon),
+                () => (_playerSystem.HasActiveSpeedBoost,
+                       _playerSystem.SpeedBoostName,
+                       _playerSystem.SpeedBoostIcon,
+                       _playerSystem.SpeedBoostRemaining,
+                       _playerSystem.SpeedBoostDuration),
+                (active, displayName, icon, remaining, duration) => PowerUpChanged?.Invoke(active, displayName, icon, remaining, duration),
+                () => (_playerSystem.HasTemporaryWeapon,
+                       _playerSystem.TemporaryWeaponName,
+                       _playerSystem.TemporaryWeaponIcon,
+                       _playerSystem.TemporaryWeaponRemaining,
+                       _playerSystem.TemporaryWeaponDuration),
+                (active, displayName, icon, remaining, duration) => NotifyTemporaryWeaponChanged(active, displayName, icon, remaining, duration),
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
@@ -126,17 +188,22 @@ namespace OptimizationGame.Core
         private void RegisterSystems()
         {
             // InputReader primero: el input del frame se lee antes de que PlayerSystem
-            // actualice movimiento/disparo. Es un MonoBehaviour ya existente que ahora
-            // implementa ITickable (no se agrega ningún MonoBehaviour nuevo).
-            if (_inputReader != null)
-                _updateManager.Register(_inputReader);
-            else
-                Debug.LogError("GameManager: _inputReader sin asignar en el Inspector. El input no se leerá.");
+            // actualice movimiento/disparo. Ahora es una clase pura (ITickable): la crea,
+            // inicializa y registra GameManager. No se agrega ningún MonoBehaviour nuevo.
+            if (_mainCamera == null)
+                Debug.LogError("GameManager: _mainCamera sin asignar en el Inspector. El aim no funcionará.");
+
+            _inputReader = new MonoBehaviours.InputReader(this, _mainCamera);
+            _inputReader.Initialize();
+            _updateManager.Register(_inputReader);
 
             _updateManager.Register(_playerSystem);
             _updateManager.Register(_enemySystem);
             _updateManager.Register(_projectileSystem);
             _updateManager.Register(_waveSystem);
+            // PickupSystem antes del orquestador: detecta recogidas en el frame y el
+            // orquestador las procesa (efectos + despawn) en el mismo Tick.
+            _updateManager.Register(_pickupSystem);
             _updateManager.Register(_orchestrator);
         }
 
@@ -176,10 +243,22 @@ namespace OptimizationGame.Core
                 _waveSystem.IsFinalWave);
             EnemiesLeftChanged?.Invoke(_waveSystem.PendingToSpawnCount + _enemySystem.AliveCount);
             WeaponChanged?.Invoke(_weaponName);
+            // Powerup arranca inactivo: la UI del powerup queda oculta hasta recoger un Speed.
+            PowerUpChanged?.Invoke(false, null, null, 0f, 0f);
+            // Arma temporal arranca inactiva: el Weapon HUD queda oculto hasta recoger un arma.
+            TemporaryWeaponChanged?.Invoke(false, null, null, 0f, 0f);
 
             // Si UIManager.Start corrió antes que el primer Tick, el orquestador re-emitirá
             // con datos ya correctos en su primer RefreshHud.
             _orchestrator.ResetHudCaches();
+        }
+
+        // Punto de notificación controlado del estado del arma temporal hacia la UI.
+        // Lo invoca el orquestador desde su Tick (no es Update). GameManager sigue siendo
+        // dueño del evento; el orquestador no lo dispara directo.
+        public void NotifyTemporaryWeaponChanged(bool active, string displayName, Sprite icon, float remaining, float duration)
+        {
+            TemporaryWeaponChanged?.Invoke(active, displayName, icon, remaining, duration);
         }
 
         // --- Callbacks no recurrentes invocados por InputReader ---
@@ -198,11 +277,37 @@ namespace OptimizationGame.Core
             var projectile = _playerSystem.CreateProjectile(_projectileSystem.Projectiles.Count);
             _projectileSystem.AddProjectile(projectile);
 
-            var view = _objectPool.Spawn("Projectile", projectile.Position);
+            // Pool key del proyectil: única fuente de verdad = projectile.PoolKey
+            // (la decide PlayerSystem). Spawn y Despawn SIEMPRE usan esta misma key:
+            // nunca se spawnea con una key distinta a la guardada en el modelo.
+            // Registro lazy: si la key es específica y aún no está en el pool, registrar
+            // el prefab del arma. Si el prefab falta en ese punto (no debería ocurrir,
+            // PlayerSystem solo deriva key especial si hay prefab), se aborta este disparo
+            // sin spawnear con otra key.
+            if (projectile.PoolKey != "Projectile" && !_objectPool.HasPrefab(projectile.PoolKey))
+            {
+                var weaponPrefab = _playerSystem.ActiveProjectilePrefab;
+                if (weaponPrefab == null)
+                {
+                    Debug.LogWarning($"GameManager: falta ProjectilePrefab para la pool key '{projectile.PoolKey}'. No se spawnea este proyectil.");
+                    _projectileSystem.RemoveProjectile(projectile);
+                    return;
+                }
+
+                _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab);
+            }
+
+            var view = _objectPool.Spawn(projectile.PoolKey, projectile.Position);
             if (view != null)
             {
                 view.SetRotation(Quaternion.LookRotation(_playerSystem.GetFireDirection()));
                 _projectileViews[projectile] = view;
+            }
+            else
+            {
+                // Spawn falló: no dejar el modelo sin view (evita un proyectil fantasma
+                // que el orquestador no podría sincronizar ni despawnear visualmente).
+                _projectileSystem.RemoveProjectile(projectile);
             }
         }
 

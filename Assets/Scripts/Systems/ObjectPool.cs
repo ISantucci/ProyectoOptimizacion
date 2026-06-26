@@ -12,11 +12,19 @@ namespace OptimizationGame.Systems
 
         public void RegisterPrefab(string poolKey, GameObject prefab)
         {
+            // Idempotente: si la key ya existe, NO se pisa el prefab ni se vacía la cola.
+            // Seguro para registro lazy repetido (mismo arma disparando varias veces).
             if (!_prefabs.ContainsKey(poolKey))
             {
                 _prefabs[poolKey] = prefab;
                 _pools[poolKey] = new Queue<EntityView>();
             }
+        }
+
+        // Permite al composition root decidir si hace falta registrar lazy un prefab nuevo.
+        public bool HasPrefab(string poolKey)
+        {
+            return _prefabs.ContainsKey(poolKey);
         }
 
         public void Prewarm(string poolKey, int count)
@@ -30,13 +38,11 @@ namespace OptimizationGame.Systems
             for (int i = 0; i < count; i++)
             {
                 var instance = Object.Instantiate(prefab);
-                var view = instance.GetComponent<EntityView>();
-                if (view != null)
-                {
-                    var poolable = view as IPoolable;
-                    poolable?.OnDespawned();
-                    queue.Enqueue(view);
-                }
+                // EntityView ahora es wrapper puro: lo crea el pool envolviendo el GameObject.
+                var view = new EntityView(instance);
+                var poolable = view as IPoolable;
+                poolable?.OnDespawned();
+                queue.Enqueue(view);
             }
         }
 
@@ -56,12 +62,12 @@ namespace OptimizationGame.Systems
             {
                 var prefab = _prefabs[poolKey];
                 var instance = Object.Instantiate(prefab);
-                view = instance.GetComponent<EntityView>();
+                view = new EntityView(instance);
             }
 
             if (view != null)
             {
-                view.gameObject.SetActive(true);
+                view.GameObject.SetActive(true);
                 view.SetPosition(position);
                 var poolable = view as IPoolable;
                 poolable?.OnSpawned();
@@ -78,7 +84,7 @@ namespace OptimizationGame.Systems
             var poolable = view as IPoolable;
             poolable?.OnDespawned();
 
-            view.gameObject.SetActive(false);
+            view.GameObject.SetActive(false);
             _pools[poolKey].Enqueue(view);
         }
     }
