@@ -59,9 +59,21 @@ namespace OptimizationGame.MonoBehaviours
             public Button ReturnToMainMenuButton;
         }
 
+        // Botones del Start/Main Menu. Clase serializable interna sin lógica: solo
+        // agrupa referencias para el Inspector. Los botones delegan flujo al GameManager.
+        // QuitButton es opcional (sin efecto en el Editor; cierra la build).
+        [Serializable]
+        private class StartMenuReferences
+        {
+            public Button StartGameButton;
+            public Button OptionsButton;
+            public Button QuitButton;
+        }
+
         [SerializeField] private GameManager _gameManager;
         [SerializeField] private PauseMenuReferences _pauseMenu = new PauseMenuReferences();
         [SerializeField] private EndMenuReferences _endMenu = new EndMenuReferences();
+        [SerializeField] private StartMenuReferences _startMenu = new StartMenuReferences();
         [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
@@ -115,6 +127,10 @@ namespace OptimizationGame.MonoBehaviours
             SetPanel(endPanel, false);
             SetPanel(startPanel, _gameManager.IsStartMenuActive);
 
+            // HUD oculto mientras se está en el Main Menu; visible si se arranca jugando.
+            // Al tocar Start, OnGameStarted lo vuelve a mostrar.
+            SetHudVisible(!_gameManager.IsStartMenuActive);
+
             // Empujar estado inicial después de suscribir, sin depender del orden de Start.
             _gameManager.BroadcastInitialUiState();
         }
@@ -145,6 +161,14 @@ namespace OptimizationGame.MonoBehaviours
                 _endMenu.RestartButton.onClick.AddListener(OnRestartClicked);
             if (_endMenu.ReturnToMainMenuButton != null)
                 _endMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
+
+            // Botones del Start/Main Menu: wiring por código (no OnClick de Inspector).
+            if (_startMenu.StartGameButton != null)
+                _startMenu.StartGameButton.onClick.AddListener(OnStartGameClicked);
+            if (_startMenu.OptionsButton != null)
+                _startMenu.OptionsButton.onClick.AddListener(OnOptionsClicked);
+            if (_startMenu.QuitButton != null)
+                _startMenu.QuitButton.onClick.AddListener(OnQuitClicked);
         }
 
         private void UnwireButtons()
@@ -164,6 +188,13 @@ namespace OptimizationGame.MonoBehaviours
                 _endMenu.RestartButton.onClick.RemoveListener(OnRestartClicked);
             if (_endMenu.ReturnToMainMenuButton != null)
                 _endMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
+
+            if (_startMenu.StartGameButton != null)
+                _startMenu.StartGameButton.onClick.RemoveListener(OnStartGameClicked);
+            if (_startMenu.OptionsButton != null)
+                _startMenu.OptionsButton.onClick.RemoveListener(OnOptionsClicked);
+            if (_startMenu.QuitButton != null)
+                _startMenu.QuitButton.onClick.RemoveListener(OnQuitClicked);
         }
 
         // Cada callback solo delega al GameManager: UIManager no decide estado de juego.
@@ -172,6 +203,18 @@ namespace OptimizationGame.MonoBehaviours
         private void OnRestartClicked() => _gameManager.RestartGame();
         private void OnOptionsClicked() => _gameManager.OpenOptions();
         private void OnReturnToMainMenuClicked() => _gameManager.ReturnToMainMenu();
+        private void OnStartGameClicked() => _gameManager.StartGameFromUI();
+
+        // Cierra la build; en Editor sale de Play Mode. El bloque UnityEditor solo compila
+        // en el Editor (guardado por #if), así que no afecta la build final.
+        private void OnQuitClicked()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
 
         private void Subscribe()
         {
@@ -188,6 +231,7 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.Victory += OnVictory;
             _gameManager.Defeat += OnDefeat;
             _gameManager.GameStarted += OnGameStarted;
+            _gameManager.ReturnedToMenu += OnReturnedToMenu;
             _subscribed = true;
         }
 
@@ -206,6 +250,7 @@ namespace OptimizationGame.MonoBehaviours
             _gameManager.Victory -= OnVictory;
             _gameManager.Defeat -= OnDefeat;
             _gameManager.GameStarted -= OnGameStarted;
+            _gameManager.ReturnedToMenu -= OnReturnedToMenu;
             _subscribed = false;
         }
 
@@ -242,9 +287,25 @@ namespace OptimizationGame.MonoBehaviours
             SetPanel(endPanel, true);
         }
 
+        // Una run empezó: desde el Main Menu (Start) o por Restart in-place desde Pause/End.
+        // Por eso cierra TODOS los overlays (start/pause/end) y muestra el HUD, en vez de
+        // ocultar solo el startPanel.
         private void OnGameStarted()
         {
             SetPanel(startPanel, false);
+            SetPanel(pausePanel, false);
+            SetPanel(endPanel, false);
+            SetHudVisible(true);
+        }
+
+        // Vuelta al Main Menu in-place (sin reload): mostrar el menú, cerrar pause/end y
+        // ocultar el HUD. Empareja con OnGameStarted (estado opuesto).
+        private void OnReturnedToMenu()
+        {
+            SetPanel(startPanel, true);
+            SetPanel(pausePanel, false);
+            SetPanel(endPanel, false);
+            SetHudVisible(false);
         }
 
         /// <summary>Muestra/oculta un panel vía CanvasGroup sin togglear GameObjects.</summary>
@@ -265,6 +326,11 @@ namespace OptimizationGame.MonoBehaviours
             SetCanvasActive(_canvases.WaveCanvas, visible);
             SetCanvasActive(_canvases.EnemiesLeftCanvas, visible);
             SetCanvasActive(_canvases.WeaponCanvas, visible);
+
+            // El botón de pausa vive dentro del HUDStaticCanvas: forma parte del HUD jugable.
+            // Reutiliza la referencia ya existente en PauseMenuReferences (sin campo nuevo).
+            if (_pauseMenu.PauseIconButton != null)
+                _pauseMenu.PauseIconButton.gameObject.SetActive(visible);
         }
 
         private static void SetCanvasActive(Canvas canvas, bool visible)
