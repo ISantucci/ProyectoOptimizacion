@@ -2,6 +2,7 @@ using System;
 using OptimizationGame.Core;
 using OptimizationGame.Interfaces;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace OptimizationGame.MonoBehaviours
@@ -121,10 +122,16 @@ namespace OptimizationGame.MonoBehaviours
 
         private void ReadFireInput()
         {
-            if (_fireAction.WasPressedThisFrame())
-            {
-                _gameManager.FireProjectile();
-            }
+            if (!_fireAction.WasPressedThisFrame())
+                return;
+
+            // El click izquierdo se usa tanto para disparar como para presionar botones de UI
+            // (PauseIconButton, Pause/End). Si el puntero está sobre un elemento del EventSystem,
+            // el click es una interacción de UI: no debe llegar a FireProjectile().
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
+
+            _gameManager.FireProjectile();
         }
     }
 }

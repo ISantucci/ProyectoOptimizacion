@@ -49,8 +49,19 @@ namespace OptimizationGame.MonoBehaviours
             public Button ReturnToMainMenuButton;
         }
 
+        // Botones del EndParent (Victory/Defeat reutilizan el mismo panel).
+        // Clase serializable interna sin lógica: solo agrupa referencias para el Inspector.
+        // Los botones delegan flujo al GameManager, igual que el Pause Menu.
+        [Serializable]
+        private class EndMenuReferences
+        {
+            public Button RestartButton;
+            public Button ReturnToMainMenuButton;
+        }
+
         [SerializeField] private GameManager _gameManager;
         [SerializeField] private PauseMenuReferences _pauseMenu = new PauseMenuReferences();
+        [SerializeField] private EndMenuReferences _endMenu = new EndMenuReferences();
         [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
@@ -70,8 +81,9 @@ namespace OptimizationGame.MonoBehaviours
         // para no togglear GameObjects ni reconstruir jerarquías.
         [SerializeField] private CanvasGroup startPanel;
         [SerializeField] private CanvasGroup pausePanel;
-        [SerializeField] private CanvasGroup victoryPanel;
-        [SerializeField] private CanvasGroup defeatPanel;
+        // EndPanel único reutilizado para Victory y Defeat: solo cambia endTitleText.
+        [SerializeField] private CanvasGroup endPanel;
+        [SerializeField] private TMP_Text endTitleText;
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
@@ -100,8 +112,7 @@ namespace OptimizationGame.MonoBehaviours
             // Estado inicial de los paneles de flujo: todos ocultos salvo el Start Menu
             // si el GameManager arrancó en ese estado.
             SetPanel(pausePanel, false);
-            SetPanel(victoryPanel, false);
-            SetPanel(defeatPanel, false);
+            SetPanel(endPanel, false);
             SetPanel(startPanel, _gameManager.IsStartMenuActive);
 
             // Empujar estado inicial después de suscribir, sin depender del orden de Start.
@@ -128,6 +139,12 @@ namespace OptimizationGame.MonoBehaviours
                 _pauseMenu.OptionsButton.onClick.AddListener(OnOptionsClicked);
             if (_pauseMenu.ReturnToMainMenuButton != null)
                 _pauseMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
+
+            // Botones del EndParent: reutilizan los mismos callbacks de flujo del GameManager.
+            if (_endMenu.RestartButton != null)
+                _endMenu.RestartButton.onClick.AddListener(OnRestartClicked);
+            if (_endMenu.ReturnToMainMenuButton != null)
+                _endMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
         }
 
         private void UnwireButtons()
@@ -142,6 +159,11 @@ namespace OptimizationGame.MonoBehaviours
                 _pauseMenu.OptionsButton.onClick.RemoveListener(OnOptionsClicked);
             if (_pauseMenu.ReturnToMainMenuButton != null)
                 _pauseMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
+
+            if (_endMenu.RestartButton != null)
+                _endMenu.RestartButton.onClick.RemoveListener(OnRestartClicked);
+            if (_endMenu.ReturnToMainMenuButton != null)
+                _endMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
         }
 
         // Cada callback solo delega al GameManager: UIManager no decide estado de juego.
@@ -191,20 +213,33 @@ namespace OptimizationGame.MonoBehaviours
 
         private void OnPauseChanged(bool paused)
         {
+            // Al pausar, el EndPanel nunca debe quedar visible: pausePanel y endPanel
+            // cuelgan del mismo OverlayCanvas y no deben solaparse. Lo ocultamos explícitamente
+            // (simetría con ShowEndPanel, que oculta pausePanel al mostrar el End).
+            if (paused)
+                SetPanel(endPanel, false);
+
             SetPanel(pausePanel, paused);
         }
 
         private void OnVictory()
         {
-            // Victory tapa la pausa si estaba visible.
-            SetPanel(pausePanel, false);
-            SetPanel(victoryPanel, true);
+            ShowEndPanel("VICTORY");
         }
 
         private void OnDefeat()
         {
+            ShowEndPanel("DEFEAT");
+        }
+
+        // EndPanel reutilizable: Victory y Defeat usan el mismo panel cambiando solo el título.
+        // Tapa la pausa si estaba visible.
+        private void ShowEndPanel(string title)
+        {
             SetPanel(pausePanel, false);
-            SetPanel(defeatPanel, true);
+            if (endTitleText != null)
+                endTitleText.text = title;
+            SetPanel(endPanel, true);
         }
 
         private void OnGameStarted()

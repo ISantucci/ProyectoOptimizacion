@@ -345,6 +345,17 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1350973573}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &897543508 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8788513094714259599, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
+  m_PrefabInstance: {fileID: 4496154487921233837}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
 --- !u!114 &904642182 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 3424286852017794226, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
@@ -356,11 +367,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!225 &1277495559 stripped
-CanvasGroup:
-  m_CorrespondingSourceObject: {fileID: 3125503403001077789, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
-  m_PrefabInstance: {fileID: 4496154487921233837}
-  m_PrefabAsset: {fileID: 0}
 --- !u!114 &1282347011 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 5673395355098449860, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
@@ -474,6 +480,9 @@ MonoBehaviour:
     RestartButton: {fileID: 1297994958}
     OptionsButton: {fileID: 904642182}
     ReturnToMainMenuButton: {fileID: 1734413508}
+  _endMenu:
+    RestartButton: {fileID: 897543508}
+    ReturnToMainMenuButton: {fileID: 1307382862}
   _canvases:
     HealthCanvas: {fileID: 125321174}
     WaveCanvas: {fileID: 1451707306}
@@ -490,9 +499,9 @@ MonoBehaviour:
   weaponPowerUpCanvasGroup: {fileID: 2144103483}
   weaponPowerUpIconFill: {fileID: 1282347011}
   startPanel: {fileID: 0}
-  pausePanel: {fileID: 1277495559}
-  victoryPanel: {fileID: 0}
-  defeatPanel: {fileID: 0}
+  pausePanel: {fileID: 1648713107}
+  endPanel: {fileID: 2075937033}
+  endTitleText: {fileID: 2136013795}
 --- !u!225 &1295482606 stripped
 CanvasGroup:
   m_CorrespondingSourceObject: {fileID: 2044037789759991564, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
@@ -501,6 +510,17 @@ CanvasGroup:
 --- !u!114 &1297994958 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 5948749907824378177, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
+  m_PrefabInstance: {fileID: 4496154487921233837}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+--- !u!114 &1307382862 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 225124093446490489, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
   m_PrefabInstance: {fileID: 4496154487921233837}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
@@ -737,6 +757,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
+--- !u!225 &1648713107 stripped
+CanvasGroup:
+  m_CorrespondingSourceObject: {fileID: 3587291522330767710, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
+  m_PrefabInstance: {fileID: 4496154487921233837}
+  m_PrefabAsset: {fileID: 0}
 --- !u!114 &1662964688 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 1763674942146289980, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
@@ -903,6 +928,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1350973573}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!225 &2075937033 stripped
+CanvasGroup:
+  m_CorrespondingSourceObject: {fileID: 2363378691642367276, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
+  m_PrefabInstance: {fileID: 4496154487921233837}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &2136013795 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6466243979689645223, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
+  m_PrefabInstance: {fileID: 4496154487921233837}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4688fdb7df04437aeb418b961361dc5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.TextMeshPro::TMPro.TextMeshProUGUI
 --- !u!225 &2144103483 stripped
 CanvasGroup:
   m_CorrespondingSourceObject: {fileID: 3724561484735348583, guid: 6fe8779a31c62da46b096e4d61688a23, type: 3}
