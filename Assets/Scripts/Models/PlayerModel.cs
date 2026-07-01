@@ -23,6 +23,13 @@ namespace OptimizationGame.Models
             if (Health < 0) Health = 0;
         }
 
+        public void Heal(float amount)
+        {
+            if (amount <= 0f) return;
+            Health += amount;
+            if (Health > MaxHealth) Health = MaxHealth;
+        }
+
         public bool IsAlive => Health > 0;
     }
 }

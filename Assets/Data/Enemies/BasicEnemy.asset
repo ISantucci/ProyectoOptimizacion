@@ -20,3 +20,4 @@ MonoBehaviour:
   StoppingDistance: 1.2
   IsBoss: 0
   DebugColor: {r: 1, g: 0, b: 0, a: 1}
+  dropTable: {fileID: 11400000, guid: 16cb53d6359dd5c48b89202528e943a8, type: 2}

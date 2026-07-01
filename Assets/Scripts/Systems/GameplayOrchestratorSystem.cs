@@ -47,11 +47,45 @@ namespace OptimizationGame.Systems
         private readonly List<RoomSpawnGroup> _roomSpawnGroups;
         private readonly Transform _playerTransform;
 
+        // --- Pickups (Bloque C). Referencias compartidas creadas por GameManager. ---
+        private readonly PickupSystem _pickupSystem;
+        private readonly Dictionary<PickupModel, EntityView> _pickupViews;
+        // Aplica speed boost en PlayerSystem sin acoplar el orquestador a ese tipo.
+        // (multiplier, duration, displayName, icon)
+        private readonly Action<float, float, string, Sprite> _applySpeedBoost;
+        // Aplica un arma temporal en PlayerSystem sin acoplar el orquestador a ese tipo.
+        // (weapon, duration, displayName, icon)
+        private readonly Action<WeaponData, float, string, Sprite> _applyTemporaryWeapon;
+        // Lee el estado del powerup activo (Speed) sin acoplar al tipo PlayerSystem.
+        // Devuelve (active, displayName, icon, remaining, duration).
+        private readonly Func<(bool active, string name, Sprite icon, float remaining, float duration)> _getPowerUpState;
+        // Notifica el estado del powerup a la UI (vía evento de GameManager).
+        private readonly Action<bool, string, Sprite, float, float> _notifyPowerUpChanged;
+        // Diff para emitir un único "inactive" al expirar y evitar spam estando apagado.
+        private bool _lastPowerUpActive;
+
+        // Estado del arma temporal (HUD separado). Mismo patrón que PowerUp.
+        // Devuelve (active, name, icon, remaining, duration).
+        private readonly Func<(bool active, string name, Sprite icon, float remaining, float duration)> _getTemporaryWeaponState;
+        private readonly Action<bool, string, Sprite, float, float> _notifyTemporaryWeaponChanged;
+        private bool _lastTemporaryWeaponActive;
+
+        private int _nextPickupId;
+        private bool _loggedMissingPickupPool;
+
+        // Radio de recogida del pickup (XZ).
+        private const float PickupCollectRadius = 1.5f;
+
+        // DropSystem: clase pura, stateless. Instanciado aquí para no tocar el wiring de
+        // GameManager. NO es ITickable; solo se invoca puntualmente al morir un enemigo.
+        private readonly DropSystem _dropSystem = new DropSystem();
+
         // --- Salidas hacia GameManager (sin acoplar al tipo MonoBehaviour) ---
         private readonly Action<float, float> _raiseHealthChanged;
         private readonly Action<string, int, int, bool> _raiseWaveChanged;
         private readonly Action<int> _raiseEnemiesLeftChanged;
-        private readonly Action _endGameplay;
+        // bool = victory (true) / defeat (false). GameManager emite el evento de UI según el flag.
+        private readonly Action<bool> _endGameplay;
 
         // Cooldown de ataque por enemigo (el timer vive en cada EnemyModel).
         private const float EnemyDamageInterval = 1f;
@@ -76,10 +110,18 @@ namespace OptimizationGame.Systems
             Dictionary<ProjectileModel, EntityView> projectileViews,
             List<RoomSpawnGroup> roomSpawnGroups,
             Transform playerTransform,
+            PickupSystem pickupSystem,
+            Dictionary<PickupModel, EntityView> pickupViews,
+            Action<float, float, string, Sprite> applySpeedBoost,
+            Action<WeaponData, float, string, Sprite> applyTemporaryWeapon,
+            Func<(bool active, string name, Sprite icon, float remaining, float duration)> getPowerUpState,
+            Action<bool, string, Sprite, float, float> notifyPowerUpChanged,
+            Func<(bool active, string name, Sprite icon, float remaining, float duration)> getTemporaryWeaponState,
+            Action<bool, string, Sprite, float, float> notifyTemporaryWeaponChanged,
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
-            Action endGameplay)
+            Action<bool> endGameplay)
         {
             _playerModel = playerModel;
             _enemySystem = enemySystem;
@@ -92,6 +134,14 @@ namespace OptimizationGame.Systems
             _projectileViews = projectileViews;
             _roomSpawnGroups = roomSpawnGroups;
             _playerTransform = playerTransform;
+            _pickupSystem = pickupSystem;
+            _pickupViews = pickupViews;
+            _applySpeedBoost = applySpeedBoost;
+            _applyTemporaryWeapon = applyTemporaryWeapon;
+            _getPowerUpState = getPowerUpState;
+            _notifyPowerUpChanged = notifyPowerUpChanged;
+            _getTemporaryWeaponState = getTemporaryWeaponState;
+            _notifyTemporaryWeaponChanged = notifyTemporaryWeaponChanged;
             _raiseHealthChanged = raiseHealthChanged;
             _raiseWaveChanged = raiseWaveChanged;
             _raiseEnemiesLeftChanged = raiseEnemiesLeftChanged;
@@ -107,6 +157,21 @@ namespace OptimizationGame.Systems
 
             HandleSpawning();
             HandleCombat(deltaTime);
+
+            // Procesa pickups recogidos por PickupSystem (que ya tickeó antes en el frame)
+            // ANTES de RefreshHud, para que un Heal emita HealthChanged en el mismo frame.
+            HandlePickups();
+            // Expirados DESPUÉS de recogidos: la recolección ya removió de ActivePickups
+            // los que se juntaron este frame, así que no hay doble procesamiento.
+            HandleExpiredPickups();
+            // Titileo de los pickups que siguen en el piso.
+            UpdatePickupVisuals();
+
+            // Notifica a la UI el estado del powerup activo (Speed). Pasa por el Tick central
+            // (no es Update). PlayerSystem ya tickeó antes este frame, así que remaining está al día.
+            NotifyPowerUpState();
+            // Mismo patrón para el arma temporal (HUD separado del PowerUp).
+            NotifyTemporaryWeaponState();
 
             // RefreshHud DESPUÉS del combate: garantiza que en el frame de muerte el HUD
             // emita vida = 0 ANTES de que HandleGameState pause el loop.
@@ -224,16 +289,22 @@ namespace OptimizationGame.Systems
                     var enemy = _enemySystem.Enemies[j];
                     bool hit = _combatSystem.ResolveProjectileEnemyCollision(projectile, enemy);
 
-                    if (!enemy.IsAlive && _enemyViews.ContainsKey(enemy))
-                    {
-                        var enemyView = _enemyViews[enemy];
-                        _objectPool.Despawn("Enemy", enemyView);
-                        _enemyViews.Remove(enemy);
-                        _enemySystem.RemoveEnemy(enemy);
-                    }
-
                     if (hit)
                     {
+                        // Daño en área: además del impacto directo, daña a los demás enemigos
+                        // dentro del radio. excludedEnemy = enemy: ya recibió el daño directo,
+                        // no debe recibirlo dos veces. CombatSystem solo aplica daño; las
+                        // muertes (directa o por área) se procesan abajo en ProcessDeadEnemies.
+                        if (projectile.HasAreaDamage)
+                        {
+                            _combatSystem.ApplyAreaDamage(
+                                projectile.Position,
+                                projectile.AreaRadius,
+                                projectile.Damage,
+                                _enemySystem.Enemies,
+                                enemy);
+                        }
+
                         projectileHit = true;
                         break;
                     }
@@ -244,12 +315,19 @@ namespace OptimizationGame.Systems
                     if (_projectileViews.ContainsKey(projectile))
                     {
                         var projectileView = _projectileViews[projectile];
-                        _objectPool.Despawn("Projectile", projectileView);
+                        // Devolver la view a la MISMA cola desde la que se spawneó. La key
+                        // viaja en el modelo (default "Projectile" o "Projectile_<WeaponId>").
+                        _objectPool.Despawn(projectile.PoolKey, projectileView);
                         _projectileViews.Remove(projectile);
                     }
                     _projectileSystem.RemoveProjectile(projectile);
                 }
             }
+
+            // Procesa TODAS las muertes (impacto directo o área) en un único barrido, después
+            // de resolver los proyectiles. Garantiza un solo despawn por enemigo y captura los
+            // muertos por área aunque el proyectil ya haya hecho break en el loop anterior.
+            ProcessDeadEnemies();
 
             // Daño al player con cooldown por enemigo (timer en cada EnemyModel).
             for (int i = _enemySystem.Enemies.Count - 1; i >= 0; i--)
@@ -266,12 +344,207 @@ namespace OptimizationGame.Systems
             }
         }
 
+        // Barrido único de enemigos muertos: tira drop, devuelve la view al pool y remueve
+        // el modelo. Captura muertes por impacto directo Y por daño en área. Iteración reversa
+        // para poder remover sin saltar índices. Un enemigo solo se procesa una vez: tras
+        // RemoveEnemy/_enemyViews.Remove ya no vuelve a entrar.
+        private void ProcessDeadEnemies()
+        {
+            for (int i = _enemySystem.Enemies.Count - 1; i >= 0; i--)
+            {
+                var enemy = _enemySystem.Enemies[i];
+                if (enemy.IsAlive || !_enemyViews.ContainsKey(enemy))
+                    continue;
+
+                // Tirar drop al morir y, si sale, spawnear pickup visible en su posición.
+                if (_dropSystem.TryRollDrop(enemy.DropTable, out var pickupData))
+                {
+                    SpawnPickup(pickupData, enemy.Position);
+                }
+
+                var enemyView = _enemyViews[enemy];
+                _objectPool.Despawn("Enemy", enemyView);
+                _enemyViews.Remove(enemy);
+                _enemySystem.RemoveEnemy(enemy);
+            }
+        }
+
+        // Crea el PickupModel, pide una EntityView al pool ("Pickup") y la registra.
+        // Si el pool no tiene la key "Pickup" configurada, degrada con warning (no crashea).
+        private void SpawnPickup(PickupData data, Vector3 position)
+        {
+            if (data == null || _pickupSystem == null)
+                return;
+
+            var view = _objectPool.Spawn("Pickup", position);
+            if (view == null)
+            {
+                if (!_loggedMissingPickupPool)
+                {
+                    Debug.LogWarning("GameplayOrchestratorSystem: pool 'Pickup' no configurado (prefab faltante). El drop no se mostrará.");
+                    _loggedMissingPickupPool = true;
+                }
+                return;
+            }
+
+            view.SetColor(data.DebugColor);
+            // Si el PickupData tiene ícono y el prefab usa SpriteRenderer, mostrarlo.
+            // Si no hay ícono o no hay SpriteRenderer, queda el color/debug (no crashea).
+            view.SetSprite(data.Icon);
+            // La view viene del pool: pudo quedar oculta por el titileo de un uso anterior.
+            // Garantizar que arranca visible.
+            view.SetVisible(true);
+
+            var model = new PickupModel(_nextPickupId++, data, position, PickupCollectRadius);
+            _pickupViews[model] = view;
+            _pickupSystem.AddPickup(model);
+        }
+
+        // Aplica los efectos de los pickups recogidos, devuelve sus views al pool y limpia.
+        private void HandlePickups()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var collected = _pickupSystem.CollectedPickups;
+            if (collected.Count == 0)
+                return;
+
+            for (int i = 0; i < collected.Count; i++)
+            {
+                var model = collected[i];
+                ApplyPickupEffect(model.Data);
+
+                if (_pickupViews.TryGetValue(model, out var view))
+                {
+                    // Restaurar visible antes de devolver al pool (el titileo pudo dejarlo oculto).
+                    view.SetVisible(true);
+                    _objectPool.Despawn("Pickup", view);
+                    _pickupViews.Remove(model);
+                }
+            }
+
+            _pickupSystem.ClearCollectedPickups();
+        }
+
+        // Procesa pickups EXPIRADOS (no recogidos): NO aplica efecto, solo devuelve la view
+        // al pool y limpia el mapping. La recolección ya tuvo prioridad en PickupSystem.Tick.
+        private void HandleExpiredPickups()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var expired = _pickupSystem.ExpiredPickups;
+            if (expired.Count == 0)
+                return;
+
+            for (int i = 0; i < expired.Count; i++)
+            {
+                var model = expired[i];
+                if (_pickupViews.TryGetValue(model, out var view))
+                {
+                    view.SetVisible(true);
+                    _objectPool.Despawn("Pickup", view);
+                    _pickupViews.Remove(model);
+                }
+            }
+
+            _pickupSystem.ClearExpiredPickups();
+        }
+
+        // Aplica el titileo a los pickups todavía activos leyendo ShouldBeVisible del modelo.
+        private void UpdatePickupVisuals()
+        {
+            if (_pickupSystem == null)
+                return;
+
+            var active = _pickupSystem.ActivePickups;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var model = active[i];
+                if (_pickupViews.TryGetValue(model, out var view))
+                    view.SetVisible(model.ShouldBeVisible);
+            }
+        }
+
+        // Empuja a la UI el estado del powerup activo. Mientras hay Speed activo, actualiza
+        // cada frame (aceptable: pasa por el Tick central, no por Update). Cuando expira,
+        // emite UNA sola vez "inactive" y deja de spamear.
+        private void NotifyPowerUpState()
+        {
+            if (_getPowerUpState == null || _notifyPowerUpChanged == null)
+                return;
+
+            var state = _getPowerUpState();
+
+            if (state.active)
+            {
+                _lastPowerUpActive = true;
+                _notifyPowerUpChanged(true, state.name, state.icon, state.remaining, state.duration);
+            }
+            else if (_lastPowerUpActive)
+            {
+                // Transición activo -> inactivo: emitir una vez para que la UI se oculte.
+                _lastPowerUpActive = false;
+                _notifyPowerUpChanged(false, null, null, 0f, 0f);
+            }
+        }
+
+        // Empuja a la UI el estado del arma temporal. Mientras hay arma activa, actualiza cada
+        // frame (pasa por el Tick central, no por Update) para que el fill baje. Al expirar,
+        // emite UNA sola vez "inactive" y deja de spamear (diff con _lastTemporaryWeaponActive).
+        private void NotifyTemporaryWeaponState()
+        {
+            if (_getTemporaryWeaponState == null || _notifyTemporaryWeaponChanged == null)
+                return;
+
+            var state = _getTemporaryWeaponState();
+
+            if (state.active)
+            {
+                _lastTemporaryWeaponActive = true;
+                _notifyTemporaryWeaponChanged(true, state.name, state.icon, state.remaining, state.duration);
+            }
+            else if (_lastTemporaryWeaponActive)
+            {
+                _lastTemporaryWeaponActive = false;
+                _notifyTemporaryWeaponChanged(false, null, null, 0f, 0f);
+            }
+        }
+
+        private void ApplyPickupEffect(PickupData data)
+        {
+            if (data == null)
+                return;
+
+            switch (data.Kind)
+            {
+                case PickupKind.Heal:
+                    // El HealthChanged se emite en RefreshHud (push por diff) este mismo frame.
+                    _playerModel.Heal(data.Amount);
+                    break;
+                case PickupKind.Speed:
+                    // Pasa nombre e ícono del PickupData para que la UI muestre el powerup activo.
+                    _applySpeedBoost?.Invoke(data.Amount, data.Duration, data.DisplayName, data.Icon);
+                    break;
+                case PickupKind.Weapon:
+                    // Arma temporal: usa PickupData.Duration (NO WeaponData.Duration). El HUD
+                    // de arma se conecta en Sub-bloque 5; acá solo se cambia el arma activa.
+                    if (data.WeaponData != null)
+                        _applyTemporaryWeapon?.Invoke(data.WeaponData, data.Duration, data.DisplayName, data.Icon);
+                    else
+                        Debug.LogWarning("GameplayOrchestratorSystem: PickupKind.Weapon sin WeaponData asignado. No se aplica arma temporal.");
+                    break;
+                // Shield: bloque futuro. No-op por ahora.
+            }
+        }
+
         private void HandleGameState()
         {
             if (!_playerModel.IsAlive)
             {
                 _gameState = GameState.Defeat;
-                _endGameplay?.Invoke();
+                _endGameplay?.Invoke(false);
                 Debug.Log("GAME OVER - PLAYER DEFEATED");
                 return;
             }
@@ -288,7 +561,7 @@ namespace OptimizationGame.Systems
                 else
                 {
                     _gameState = GameState.Victory;
-                    _endGameplay?.Invoke();
+                    _endGameplay?.Invoke(true);
                     Debug.Log("VICTORY - ALL ROOMS COMPLETED");
                 }
             }
