@@ -415,8 +415,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Core.GameManager
   _playerTransform: {fileID: 1294226504}
-  _enemyPrefab: {fileID: 7637965844550797335, guid: 41d60d7f7c2cea0479c3034c429b32da, type: 3}
-  _projectilePrefab: {fileID: 6787997616460462462, guid: 96d7ef1c9a6d19348a6526885e539812, type: 3}
+  _enemyPrefab: {fileID: 4414871117303439921, guid: aef9a3e063e740f4d8100584de73ceb4, type: 3}
+  _projectilePrefab: {fileID: 1122964723992546, guid: 674adf642abf5614aae2995443c8250f, type: 3}
   _pickupPrefab: {fileID: 1708123539570047673, guid: 2618f222b2a6bf44cae0e4d2ec48cd35, type: 3}
   _updateManager: {fileID: 1294942944}
   _mainCamera: {fileID: 1911453334}
@@ -485,6 +485,7 @@ MonoBehaviour:
     ReturnToMainMenuButton: {fileID: 1307382862}
   _startMenu:
     StartGameButton: {fileID: 4496154487921233846}
+    OptionsButton: {fileID: 0}
     QuitButton: {fileID: 4496154487921233844}
   _canvases:
     HealthCanvas: {fileID: 125321174}
