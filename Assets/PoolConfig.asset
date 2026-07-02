@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: abea9be0fc0e7f54f877724caeb5e133, type: 3}
   m_Name: PoolConfig
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.PoolConfig
-  EnemyPrewarm: 500
+  EnemyPrewarm: 25
   ProjectilePrewarm: 25
   VfxPrewarm: 10
   PickupPrewarm: 10
