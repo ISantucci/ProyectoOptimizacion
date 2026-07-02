@@ -113,7 +113,8 @@ namespace OptimizationGame.MonoBehaviours
             if (_particleSystem == null)
                 return;
 
-            _particleSystem.Clear(true);
+            // Limpia partículas de un uso anterior (Stop + StopEmittingAndClear) y reproduce.
+            ClearParticles();
             _particleSystem.Play(true);
         }
 
@@ -148,8 +149,12 @@ namespace OptimizationGame.MonoBehaviours
             _gameObject.SetActive(true);
         }
 
+        // Retorno limpio al pool: primero limpia el VFX (Stop + StopEmittingAndClear) para no
+        // dejar partículas bufferadas/playOnAwake vivas, y recién ahí apaga el GameObject.
+        // No-op de partículas si el prefab no tiene ParticleSystem (enemigos/proyectiles/pickups).
         public void OnDespawned()
         {
+            ClearParticles();
             _gameObject.SetActive(false);
         }
     }
