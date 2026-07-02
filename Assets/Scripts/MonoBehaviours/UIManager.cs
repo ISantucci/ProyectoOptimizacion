@@ -1,8 +1,8 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using OptimizationGame.Core;
 using UnityEngine;
-using UnityEngine.Serialization;
 using UnityEngine.UI;
 using TMPro;
 
@@ -14,104 +14,56 @@ namespace OptimizationGame.MonoBehaviours
     /// cuando el dato cambia. No tiene Update: cero reasignaciones de texto por frame,
     /// para evitar Canvas Rebuilds innecesarios.
     /// HUD separado por frecuencia de cambio: un Canvas por dato dinámico.
+    ///
+    /// Lectura estricta de la consigna (máx. 10 campos serializados/públicos): solo se
+    /// serializan 3 raíces (_gameManager, _hudRoot, _overlayRoot). El resto de referencias
+    /// de UI se resuelven UNA sola vez en Start() mediante búsqueda LOCAL/scoped dentro de
+    /// esos roots (Transform.Find + GetComponent). No se usa GameObject.Find/FindObjectOfType.
     /// </summary>
     public class UIManager : MonoBehaviour
     {
-        [Serializable]
-        private class HudCanvasReferences
-        {
-            public Canvas HealthCanvas;
-            public Canvas WaveCanvas;
-            public Canvas EnemiesLeftCanvas;
-            public Canvas WeaponCanvas;
-        }
-
-        [Serializable]
-        private class HudTextReferences
-        {
-            public Image HealthBar;
-            public TMP_Text HealthValueText; // opcional: número de vida sobre la barra
-            public TMP_Text WaveText;
-            public TMP_Text EnemiesLeftText;
-            public TMP_Text WeaponText;
-        }
-
-        // Referencias del Pause Menu agrupadas para mantener el Inspector ordenado.
-        // No es un MonoBehaviour: es una clase serializable interna sin lógica.
-        // El panel se sigue mostrando/ocultando por el evento PauseChanged del GameManager;
-        // los botones solo delegan acciones de flujo al GameManager (sin decidir estado acá).
-        [Serializable]
-        private class PauseMenuReferences
-        {
-            public Button PauseIconButton;       // ícono in-game para abrir la pausa
-            public Button ResumeButton;
-            public Button RestartButton;
-            public Button OptionsButton;
-            public Button ReturnToMainMenuButton;
-        }
-
-        // Botones del EndParent (Victory/Defeat reutilizan el mismo panel).
-        // Clase serializable interna sin lógica: solo agrupa referencias para el Inspector.
-        // Los botones delegan flujo al GameManager, igual que el Pause Menu.
-        [Serializable]
-        private class EndMenuReferences
-        {
-            public Button RestartButton;
-            public Button ReturnToMainMenuButton;
-        }
-
-        // Botones del Start/Main Menu. Clase serializable interna sin lógica: solo
-        // agrupa referencias para el Inspector. Los botones delegan flujo al GameManager.
-        // QuitButton es opcional (sin efecto en el Editor; cierra la build).
-        [Serializable]
-        private class StartMenuReferences
-        {
-            public Button StartGameButton;
-            public Button OptionsButton;
-            public Button QuitButton;
-        }
-
-        // Paneles de flujo (inicio/pausa/victoria/derrota) agrupados. Clase serializable
-        // interna sin lógica: solo agrupa referencias para el Inspector. Opcionales: si
-        // quedan sin asignar, SetPanel no hace nada (no crashea).
-        [Serializable]
-        private class PanelReferences
-        {
-            [FormerlySerializedAs("startPanel")] public CanvasGroup StartPanel;
-            [FormerlySerializedAs("pausePanel")] public CanvasGroup PausePanel;
-            // EndPanel único reutilizado para Victory y Defeat: solo cambia EndTitleText.
-            [FormerlySerializedAs("endPanel")] public CanvasGroup EndPanel;
-            [FormerlySerializedAs("endTitleText")] public TMP_Text EndTitleText;
-        }
-
-        // UI del powerup temporal activo (Speed). La Image debe configurarse en Unity como
-        // Filled / Vertical / Origin Top para vaciarse hacia abajo. Opcionales: no crashea.
-        [Serializable]
-        private class PowerUpUiReferences
-        {
-            [FormerlySerializedAs("powerUpCanvasGroup")] public CanvasGroup CanvasGroup;
-            [FormerlySerializedAs("powerUpIconFill")] public Image IconFill;
-        }
-
-        // UI del arma temporal activa. HUD SEPARADO del powerup (Speed): no se reutiliza.
-        // Misma config de Image (Filled / Vertical / Origin Top). Opcionales: no crashea.
-        [Serializable]
-        private class WeaponPickupUiReferences
-        {
-            [FormerlySerializedAs("weaponPowerUpCanvasGroup")] public CanvasGroup CanvasGroup;
-            [FormerlySerializedAs("weaponPowerUpIconFill")] public Image IconFill;
-        }
-
         [SerializeField] private GameManager _gameManager;
-        [SerializeField] private PauseMenuReferences _pauseMenu = new PauseMenuReferences();
-        [SerializeField] private EndMenuReferences _endMenu = new EndMenuReferences();
-        [SerializeField] private StartMenuReferences _startMenu = new StartMenuReferences();
-        [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
-        [SerializeField] private HudTextReferences _texts = new HudTextReferences();
+        [SerializeField] private Transform _hudRoot;
+        [SerializeField] private Transform _overlayRoot;
 
-        [SerializeField] private PanelReferences _panels = new PanelReferences();
-        [SerializeField] private PowerUpUiReferences _powerUpUi = new PowerUpUiReferences();
-        [SerializeField] private WeaponPickupUiReferences _weaponPickupUi = new WeaponPickupUiReferences();
+        // --- Referencias runtime (NO serializadas): resueltas en ResolveReferences() ---
+
+        // Canvas dinámicos del HUD.
+        private Canvas _healthCanvas;
+        private Canvas _waveCanvas;
+        private Canvas _enemiesLeftCanvas;
+        private Canvas _weaponCanvas;
+
+        // Textos del HUD / overlay.
+        private TMP_Text _healthValueText;
+        private TMP_Text _waveText;
+        private TMP_Text _enemiesLeftText;
+        private TMP_Text _weaponText;
+        private TMP_Text _endTitleText;
+
+        // Imágenes con fillAmount.
+        private Image _healthBar;
+        private Image _powerUpIconFill;
+        private Image _weaponPickupIconFill;
+
+        // Paneles de flujo y HUDs opcionales (CanvasGroup).
+        private CanvasGroup _startPanel;
+        private CanvasGroup _pausePanel;
+        private CanvasGroup _endPanel;
+        private CanvasGroup _powerUpCanvasGroup;
+        private CanvasGroup _weaponPickupCanvasGroup;
+
+        // Botones (delegan flujo al GameManager; no deciden estado acá).
+        private Button _pauseIconButton;
+        private Button _resumeButton;
+        private Button _pauseRestartButton;
+        private Button _pauseOptionsButton;
+        private Button _pauseReturnToMainMenuButton;
+        private Button _endRestartButton;
+        private Button _endReturnToMainMenuButton;
+        private Button _startGameButton;
+        private Button _startOptionsButton;
+        private Button _quitButton;
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
@@ -126,6 +78,9 @@ namespace OptimizationGame.MonoBehaviours
         private const float HealthBarAnimationDuration = 0.3f;
         private Coroutine _healthBarRoutine;
 
+        // Acumulador de rutas no resueltas: se loguea una sola advertencia al final.
+        private readonly List<string> _missingRefs = new List<string>();
+
         private void Start()
         {
             if (_gameManager == null)
@@ -134,14 +89,16 @@ namespace OptimizationGame.MonoBehaviours
                 return;
             }
 
+            ResolveReferences();
+
             Subscribe();
             WireButtons();
 
             // Estado inicial de los paneles de flujo: todos ocultos salvo el Start Menu
             // si el GameManager arrancó en ese estado.
-            SetPanel(_panels.PausePanel, false);
-            SetPanel(_panels.EndPanel, false);
-            SetPanel(_panels.StartPanel, _gameManager.IsStartMenuActive);
+            SetPanel(_pausePanel, false);
+            SetPanel(_endPanel, false);
+            SetPanel(_startPanel, _gameManager.IsStartMenuActive);
 
             // HUD oculto mientras se está en el Main Menu; visible si se arranca jugando.
             // Al tocar Start, OnGameStarted lo vuelve a mostrar.
@@ -157,60 +114,157 @@ namespace OptimizationGame.MonoBehaviours
             UnwireButtons();
         }
 
+        // --- Resolución de referencias (búsqueda LOCAL, una sola vez en Start) ---
+
+        /// <summary>
+        /// Resuelve todas las referencias de UI dentro de _hudRoot y _overlayRoot mediante
+        /// Transform.Find (scoped, NO global). Los duplicados de nombre (RestartButton,
+        /// ReturnToMenuButton) se desambiguan por su parent (PauseMenuParent vs EndParent).
+        /// Fail-safe: lo que no se encuentra queda null y se acumula en _missingRefs.
+        /// </summary>
+        private void ResolveReferences()
+        {
+            if (_overlayRoot == null)
+                _missingRefs.Add("(campo) _overlayRoot");
+            if (_hudRoot == null)
+                _missingRefs.Add("(campo) _hudRoot");
+
+            // --- Overlay: paneles de flujo (start / pause / end) ---
+            _startPanel = FindComponent<CanvasGroup>(_overlayRoot, "StartMenuParent");
+            _startGameButton = FindComponent<Button>(_overlayRoot, "StartMenuParent/StartGameButton");
+            _startOptionsButton = FindComponent<Button>(_overlayRoot, "StartMenuParent/OptionsButton");
+            _quitButton = FindComponent<Button>(_overlayRoot, "StartMenuParent/QuitButton");
+
+            _pausePanel = FindComponent<CanvasGroup>(_overlayRoot, "PauseMenuParent");
+            _resumeButton = FindComponent<Button>(_overlayRoot, "PauseMenuParent/ResumeButton");
+            _pauseRestartButton = FindComponent<Button>(_overlayRoot, "PauseMenuParent/RestartButton");
+            _pauseOptionsButton = FindComponent<Button>(_overlayRoot, "PauseMenuParent/OptionsButton");
+            _pauseReturnToMainMenuButton = FindComponent<Button>(_overlayRoot, "PauseMenuParent/ReturnToMenuButton");
+
+            _endPanel = FindComponent<CanvasGroup>(_overlayRoot, "EndParent");
+            _endTitleText = FindComponent<TMP_Text>(_overlayRoot, "EndParent/EndTitleText");
+            _endRestartButton = FindComponent<Button>(_overlayRoot, "EndParent/RestartButton");
+            _endReturnToMainMenuButton = FindComponent<Button>(_overlayRoot, "EndParent/ReturnToMenuButton");
+
+            // --- HUD: botón de pausa (typo real en la jerarquía: "PuseIconButton") ---
+            _pauseIconButton = FindComponent<Button>(_hudRoot, "HUDStaticCanvas/PuseIconButton");
+
+            // --- HUD: canvas dinámicos + sus textos/barras ---
+            _healthCanvas = FindComponent<Canvas>(_hudRoot, "HealthCanvas");
+            _healthBar = FindComponent<Image>(_hudRoot, "HealthCanvas/healthFrame/HealthBarFill");
+            _healthValueText = FindComponent<TMP_Text>(_hudRoot, "HealthCanvas/HealthText");
+
+            _waveCanvas = FindComponent<Canvas>(_hudRoot, "WaveCanvas");
+            _waveText = FindComponent<TMP_Text>(_hudRoot, "WaveCanvas/WaveText");
+
+            _enemiesLeftCanvas = FindComponent<Canvas>(_hudRoot, "EnemiesLeftCanvas");
+            _enemiesLeftText = FindComponent<TMP_Text>(_hudRoot, "EnemiesLeftCanvas/EnemiesLeftText");
+
+            _weaponCanvas = FindComponent<Canvas>(_hudRoot, "WeaponCanvas");
+            _weaponText = FindComponent<TMP_Text>(_hudRoot, "WeaponCanvas/WeaponText");
+
+            // --- HUD: powerup temporal + arma temporal ---
+            _powerUpCanvasGroup = FindComponent<CanvasGroup>(_hudRoot, "PowerUpPanel");
+            _powerUpIconFill = FindComponent<Image>(_hudRoot, "PowerUpPanel/PowerUpIcon");
+
+            _weaponPickupCanvasGroup = FindComponent<CanvasGroup>(_hudRoot, "WeaponPickUp");
+            _weaponPickupIconFill = FindComponent<Image>(_hudRoot, "WeaponPickUp/WeaponPickUpIcon");
+
+            if (_missingRefs.Count > 0)
+            {
+                Debug.LogWarning(
+                    "UIManager: referencias de UI no resueltas (verificar nombres/jerarquía en el prefab UI): "
+                    + string.Join(", ", _missingRefs));
+            }
+        }
+
+        /// <summary>
+        /// Busca un hijo por path relativo a root (búsqueda LOCAL, no global).
+        /// Devuelve null y acumula la ruta faltante si no existe. No tira NullReference.
+        /// </summary>
+        private Transform FindChild(Transform root, string path)
+        {
+            if (root == null)
+                return null;
+
+            Transform child = root.Find(path);
+            if (child == null)
+                _missingRefs.Add($"{root.name}/{path}");
+
+            return child;
+        }
+
+        /// <summary>
+        /// Igual que FindChild pero devuelve el componente T del hijo. Acumula la ruta
+        /// faltante si no existe el hijo o el componente. No tira NullReference.
+        /// </summary>
+        private T FindComponent<T>(Transform root, string path) where T : Component
+        {
+            Transform child = FindChild(root, path);
+            if (child == null)
+                return null;
+
+            T component = child.GetComponent<T>();
+            if (component == null)
+                _missingRefs.Add($"{root.name}/{path} : falta {typeof(T).Name}");
+
+            return component;
+        }
+
         // --- Wiring de botones del Pause Menu (sin Update, sin lógica de gameplay) ---
 
         private void WireButtons()
         {
-            if (_pauseMenu.PauseIconButton != null)
-                _pauseMenu.PauseIconButton.onClick.AddListener(OnPauseClicked);
-            if (_pauseMenu.ResumeButton != null)
-                _pauseMenu.ResumeButton.onClick.AddListener(OnResumeClicked);
-            if (_pauseMenu.RestartButton != null)
-                _pauseMenu.RestartButton.onClick.AddListener(OnRestartClicked);
-            if (_pauseMenu.OptionsButton != null)
-                _pauseMenu.OptionsButton.onClick.AddListener(OnOptionsClicked);
-            if (_pauseMenu.ReturnToMainMenuButton != null)
-                _pauseMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
+            if (_pauseIconButton != null)
+                _pauseIconButton.onClick.AddListener(OnPauseClicked);
+            if (_resumeButton != null)
+                _resumeButton.onClick.AddListener(OnResumeClicked);
+            if (_pauseRestartButton != null)
+                _pauseRestartButton.onClick.AddListener(OnRestartClicked);
+            if (_pauseOptionsButton != null)
+                _pauseOptionsButton.onClick.AddListener(OnOptionsClicked);
+            if (_pauseReturnToMainMenuButton != null)
+                _pauseReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
 
             // Botones del EndParent: reutilizan los mismos callbacks de flujo del GameManager.
-            if (_endMenu.RestartButton != null)
-                _endMenu.RestartButton.onClick.AddListener(OnRestartClicked);
-            if (_endMenu.ReturnToMainMenuButton != null)
-                _endMenu.ReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
+            if (_endRestartButton != null)
+                _endRestartButton.onClick.AddListener(OnRestartClicked);
+            if (_endReturnToMainMenuButton != null)
+                _endReturnToMainMenuButton.onClick.AddListener(OnReturnToMainMenuClicked);
 
             // Botones del Start/Main Menu: wiring por código (no OnClick de Inspector).
-            if (_startMenu.StartGameButton != null)
-                _startMenu.StartGameButton.onClick.AddListener(OnStartGameClicked);
-            if (_startMenu.OptionsButton != null)
-                _startMenu.OptionsButton.onClick.AddListener(OnOptionsClicked);
-            if (_startMenu.QuitButton != null)
-                _startMenu.QuitButton.onClick.AddListener(OnQuitClicked);
+            if (_startGameButton != null)
+                _startGameButton.onClick.AddListener(OnStartGameClicked);
+            if (_startOptionsButton != null)
+                _startOptionsButton.onClick.AddListener(OnOptionsClicked);
+            if (_quitButton != null)
+                _quitButton.onClick.AddListener(OnQuitClicked);
         }
 
         private void UnwireButtons()
         {
-            if (_pauseMenu.PauseIconButton != null)
-                _pauseMenu.PauseIconButton.onClick.RemoveListener(OnPauseClicked);
-            if (_pauseMenu.ResumeButton != null)
-                _pauseMenu.ResumeButton.onClick.RemoveListener(OnResumeClicked);
-            if (_pauseMenu.RestartButton != null)
-                _pauseMenu.RestartButton.onClick.RemoveListener(OnRestartClicked);
-            if (_pauseMenu.OptionsButton != null)
-                _pauseMenu.OptionsButton.onClick.RemoveListener(OnOptionsClicked);
-            if (_pauseMenu.ReturnToMainMenuButton != null)
-                _pauseMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
+            if (_pauseIconButton != null)
+                _pauseIconButton.onClick.RemoveListener(OnPauseClicked);
+            if (_resumeButton != null)
+                _resumeButton.onClick.RemoveListener(OnResumeClicked);
+            if (_pauseRestartButton != null)
+                _pauseRestartButton.onClick.RemoveListener(OnRestartClicked);
+            if (_pauseOptionsButton != null)
+                _pauseOptionsButton.onClick.RemoveListener(OnOptionsClicked);
+            if (_pauseReturnToMainMenuButton != null)
+                _pauseReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
 
-            if (_endMenu.RestartButton != null)
-                _endMenu.RestartButton.onClick.RemoveListener(OnRestartClicked);
-            if (_endMenu.ReturnToMainMenuButton != null)
-                _endMenu.ReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
+            if (_endRestartButton != null)
+                _endRestartButton.onClick.RemoveListener(OnRestartClicked);
+            if (_endReturnToMainMenuButton != null)
+                _endReturnToMainMenuButton.onClick.RemoveListener(OnReturnToMainMenuClicked);
 
-            if (_startMenu.StartGameButton != null)
-                _startMenu.StartGameButton.onClick.RemoveListener(OnStartGameClicked);
-            if (_startMenu.OptionsButton != null)
-                _startMenu.OptionsButton.onClick.RemoveListener(OnOptionsClicked);
-            if (_startMenu.QuitButton != null)
-                _startMenu.QuitButton.onClick.RemoveListener(OnQuitClicked);
+            if (_startGameButton != null)
+                _startGameButton.onClick.RemoveListener(OnStartGameClicked);
+            if (_startOptionsButton != null)
+                _startOptionsButton.onClick.RemoveListener(OnOptionsClicked);
+            if (_quitButton != null)
+                _quitButton.onClick.RemoveListener(OnQuitClicked);
         }
 
         // Cada callback solo delega al GameManager: UIManager no decide estado de juego.
@@ -278,9 +332,9 @@ namespace OptimizationGame.MonoBehaviours
             // cuelgan del mismo OverlayCanvas y no deben solaparse. Lo ocultamos explícitamente
             // (simetría con ShowEndPanel, que oculta pausePanel al mostrar el End).
             if (paused)
-                SetPanel(_panels.EndPanel, false);
+                SetPanel(_endPanel, false);
 
-            SetPanel(_panels.PausePanel, paused);
+            SetPanel(_pausePanel, paused);
         }
 
         private void OnVictory()
@@ -297,10 +351,10 @@ namespace OptimizationGame.MonoBehaviours
         // Tapa la pausa si estaba visible.
         private void ShowEndPanel(string title)
         {
-            SetPanel(_panels.PausePanel, false);
-            if (_panels.EndTitleText != null)
-                _panels.EndTitleText.text = title;
-            SetPanel(_panels.EndPanel, true);
+            SetPanel(_pausePanel, false);
+            if (_endTitleText != null)
+                _endTitleText.text = title;
+            SetPanel(_endPanel, true);
         }
 
         // Una run empezó: desde el Main Menu (Start) o por Restart in-place desde Pause/End.
@@ -308,9 +362,9 @@ namespace OptimizationGame.MonoBehaviours
         // ocultar solo el startPanel.
         private void OnGameStarted()
         {
-            SetPanel(_panels.StartPanel, false);
-            SetPanel(_panels.PausePanel, false);
-            SetPanel(_panels.EndPanel, false);
+            SetPanel(_startPanel, false);
+            SetPanel(_pausePanel, false);
+            SetPanel(_endPanel, false);
             SetHudVisible(true);
         }
 
@@ -318,9 +372,9 @@ namespace OptimizationGame.MonoBehaviours
         // ocultar el HUD. Empareja con OnGameStarted (estado opuesto).
         private void OnReturnedToMenu()
         {
-            SetPanel(_panels.StartPanel, true);
-            SetPanel(_panels.PausePanel, false);
-            SetPanel(_panels.EndPanel, false);
+            SetPanel(_startPanel, true);
+            SetPanel(_pausePanel, false);
+            SetPanel(_endPanel, false);
             SetHudVisible(false);
         }
 
@@ -338,15 +392,14 @@ namespace OptimizationGame.MonoBehaviours
         /// <summary>Muestra/oculta los Canvas dinámicos del HUD.</summary>
         public void SetHudVisible(bool visible)
         {
-            SetCanvasActive(_canvases.HealthCanvas, visible);
-            SetCanvasActive(_canvases.WaveCanvas, visible);
-            SetCanvasActive(_canvases.EnemiesLeftCanvas, visible);
-            SetCanvasActive(_canvases.WeaponCanvas, visible);
+            SetCanvasActive(_healthCanvas, visible);
+            SetCanvasActive(_waveCanvas, visible);
+            SetCanvasActive(_enemiesLeftCanvas, visible);
+            SetCanvasActive(_weaponCanvas, visible);
 
             // El botón de pausa vive dentro del HUDStaticCanvas: forma parte del HUD jugable.
-            // Reutiliza la referencia ya existente en PauseMenuReferences (sin campo nuevo).
-            if (_pauseMenu.PauseIconButton != null)
-                _pauseMenu.PauseIconButton.gameObject.SetActive(visible);
+            if (_pauseIconButton != null)
+                _pauseIconButton.gameObject.SetActive(visible);
         }
 
         private static void SetCanvasActive(Canvas canvas, bool visible)
@@ -359,18 +412,18 @@ namespace OptimizationGame.MonoBehaviours
         {
             // Texto numérico de vida (opcional). Actualiza instantáneo, independiente
             // de la animación de la barra. Solo reasigna si el string cambió.
-            if (_texts.HealthValueText != null)
+            if (_healthValueText != null)
             {
                 string s = $"{Mathf.CeilToInt(current)}/{Mathf.CeilToInt(max)}";
                 if (s != _lastHealthValueString)
                 {
                     _lastHealthValueString = s;
-                    _texts.HealthValueText.text = s;
+                    _healthValueText.text = s;
                 }
             }
 
             // La barra de vida (opcional) sigue siendo la representación principal.
-            if (_texts.HealthBar == null)
+            if (_healthBar == null)
                 return;
 
             float targetFill = max > 0f ? Mathf.Clamp01(current / max) : 0f;
@@ -390,7 +443,7 @@ namespace OptimizationGame.MonoBehaviours
             // Si el objeto está inactivo no se pueden lanzar coroutines: setear directo.
             if (!isActiveAndEnabled)
             {
-                _texts.HealthBar.fillAmount = targetFill;
+                _healthBar.fillAmount = targetFill;
                 _healthBarRoutine = null;
                 return;
             }
@@ -400,24 +453,24 @@ namespace OptimizationGame.MonoBehaviours
 
         private IEnumerator AnimateHealthBarRoutine(float targetFill)
         {
-            float startFill = _texts.HealthBar.fillAmount;
+            float startFill = _healthBar.fillAmount;
             float elapsed = 0f;
 
             while (elapsed < HealthBarAnimationDuration)
             {
                 elapsed += Time.unscaledDeltaTime; // independiente del timeScale (pausa futura)
                 float t = Mathf.Clamp01(elapsed / HealthBarAnimationDuration);
-                _texts.HealthBar.fillAmount = Mathf.Lerp(startFill, targetFill, t);
+                _healthBar.fillAmount = Mathf.Lerp(startFill, targetFill, t);
                 yield return null;
             }
 
-            _texts.HealthBar.fillAmount = targetFill;
+            _healthBar.fillAmount = targetFill;
             _healthBarRoutine = null;
         }
 
         public void UpdateWave(string waveName, int currentWaveIndex, int totalWaves, bool isFinalWave)
         {
-            if (_texts.WaveText == null)
+            if (_waveText == null)
                 return;
 
             // Solo el nombre real de la wave; se ignoran índice, total y flag final.
@@ -426,13 +479,13 @@ namespace OptimizationGame.MonoBehaviours
             if (s != _lastWaveString)
             {
                 _lastWaveString = s;
-                _texts.WaveText.text = s;
+                _waveText.text = s;
             }
         }
 
         public void UpdateEnemiesLeft(int enemiesLeft)
         {
-            if (_texts.EnemiesLeftText == null)
+            if (_enemiesLeftText == null)
                 return;
 
             int safeCount = Mathf.Max(0, enemiesLeft);
@@ -440,7 +493,7 @@ namespace OptimizationGame.MonoBehaviours
             if (s != _lastEnemiesLeftString)
             {
                 _lastEnemiesLeftString = s;
-                _texts.EnemiesLeftText.text = s;
+                _enemiesLeftText.text = s;
             }
         }
 
@@ -451,21 +504,21 @@ namespace OptimizationGame.MonoBehaviours
         /// </summary>
         public void UpdatePowerUp(bool active, string displayName, Sprite icon, float remaining, float duration)
         {
-            if (_powerUpUi.CanvasGroup != null)
+            if (_powerUpCanvasGroup != null)
             {
-                _powerUpUi.CanvasGroup.alpha = active ? 1f : 0f;
-                _powerUpUi.CanvasGroup.interactable = active;
-                _powerUpUi.CanvasGroup.blocksRaycasts = active;
+                _powerUpCanvasGroup.alpha = active ? 1f : 0f;
+                _powerUpCanvasGroup.interactable = active;
+                _powerUpCanvasGroup.blocksRaycasts = active;
             }
 
-            if (!active || _powerUpUi.IconFill == null)
+            if (!active || _powerUpIconFill == null)
                 return;
 
             if (icon != null)
-                _powerUpUi.IconFill.sprite = icon;
+                _powerUpIconFill.sprite = icon;
 
             float fill = duration > 0f ? Mathf.Clamp01(remaining / duration) : 0f;
-            _powerUpUi.IconFill.fillAmount = fill;
+            _powerUpIconFill.fillAmount = fill;
         }
 
         /// <summary>
@@ -475,42 +528,42 @@ namespace OptimizationGame.MonoBehaviours
         /// </summary>
         public void UpdateTemporaryWeapon(bool active, string displayName, Sprite icon, float remaining, float duration)
         {
-            if (_weaponPickupUi.CanvasGroup != null)
+            if (_weaponPickupCanvasGroup != null)
             {
-                _weaponPickupUi.CanvasGroup.alpha = active ? 1f : 0f;
-                _weaponPickupUi.CanvasGroup.interactable = false;
-                _weaponPickupUi.CanvasGroup.blocksRaycasts = false;
+                _weaponPickupCanvasGroup.alpha = active ? 1f : 0f;
+                _weaponPickupCanvasGroup.interactable = false;
+                _weaponPickupCanvasGroup.blocksRaycasts = false;
             }
 
-            if (_weaponPickupUi.IconFill == null)
+            if (_weaponPickupIconFill == null)
                 return;
 
             if (!active)
             {
                 // Limpiar el sprite al ocultar evita que reaparezca un icono stale la próxima vez.
-                _weaponPickupUi.IconFill.sprite = null;
-                _weaponPickupUi.IconFill.fillAmount = 0f;
+                _weaponPickupIconFill.sprite = null;
+                _weaponPickupIconFill.fillAmount = 0f;
                 return;
             }
 
             // Asignar siempre (incluido null): si el arma no tiene icono, limpia el anterior
             // en vez de dejar visible el de un arma previa.
-            _weaponPickupUi.IconFill.sprite = icon;
+            _weaponPickupIconFill.sprite = icon;
 
             float fill = duration > 0f ? Mathf.Clamp01(remaining / duration) : 0f;
-            _weaponPickupUi.IconFill.fillAmount = fill;
+            _weaponPickupIconFill.fillAmount = fill;
         }
 
         public void UpdateWeapon(string weaponName)
         {
-            if (_texts.WeaponText == null)
+            if (_weaponText == null)
                 return;
 
             string s = $"Weapon: {weaponName}";
             if (s != _lastWeaponString)
             {
                 _lastWeaponString = s;
-                _texts.WeaponText.text = s;
+                _weaponText.text = s;
             }
         }
     }
