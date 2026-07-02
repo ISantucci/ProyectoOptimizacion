@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using OptimizationGame.Core;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 using TMPro;
 
@@ -70,6 +71,37 @@ namespace OptimizationGame.MonoBehaviours
             public Button QuitButton;
         }
 
+        // Paneles de flujo (inicio/pausa/victoria/derrota) agrupados. Clase serializable
+        // interna sin lógica: solo agrupa referencias para el Inspector. Opcionales: si
+        // quedan sin asignar, SetPanel no hace nada (no crashea).
+        [Serializable]
+        private class PanelReferences
+        {
+            [FormerlySerializedAs("startPanel")] public CanvasGroup StartPanel;
+            [FormerlySerializedAs("pausePanel")] public CanvasGroup PausePanel;
+            // EndPanel único reutilizado para Victory y Defeat: solo cambia EndTitleText.
+            [FormerlySerializedAs("endPanel")] public CanvasGroup EndPanel;
+            [FormerlySerializedAs("endTitleText")] public TMP_Text EndTitleText;
+        }
+
+        // UI del powerup temporal activo (Speed). La Image debe configurarse en Unity como
+        // Filled / Vertical / Origin Top para vaciarse hacia abajo. Opcionales: no crashea.
+        [Serializable]
+        private class PowerUpUiReferences
+        {
+            [FormerlySerializedAs("powerUpCanvasGroup")] public CanvasGroup CanvasGroup;
+            [FormerlySerializedAs("powerUpIconFill")] public Image IconFill;
+        }
+
+        // UI del arma temporal activa. HUD SEPARADO del powerup (Speed): no se reutiliza.
+        // Misma config de Image (Filled / Vertical / Origin Top). Opcionales: no crashea.
+        [Serializable]
+        private class WeaponPickupUiReferences
+        {
+            [FormerlySerializedAs("weaponPowerUpCanvasGroup")] public CanvasGroup CanvasGroup;
+            [FormerlySerializedAs("weaponPowerUpIconFill")] public Image IconFill;
+        }
+
         [SerializeField] private GameManager _gameManager;
         [SerializeField] private PauseMenuReferences _pauseMenu = new PauseMenuReferences();
         [SerializeField] private EndMenuReferences _endMenu = new EndMenuReferences();
@@ -77,25 +109,9 @@ namespace OptimizationGame.MonoBehaviours
         [SerializeField] private HudCanvasReferences _canvases = new HudCanvasReferences();
         [SerializeField] private HudTextReferences _texts = new HudTextReferences();
 
-        // UI del powerup temporal activo (Speed). Opcionales: si quedan sin asignar, no crashea.
-        // La Image debe configurarse en Unity como Filled / Vertical / Origin Top para vaciarse hacia abajo.
-        [SerializeField] private CanvasGroup powerUpCanvasGroup;
-        [SerializeField] private Image powerUpIconFill;
-
-        // UI del arma temporal activa. HUD SEPARADO del powerup (Speed): no se reutiliza.
-        // Opcionales: si quedan sin asignar, no crashea. La Image debe configurarse en Unity
-        // como Filled / Vertical / Origin Top para vaciarse hacia abajo según Duration.
-        [SerializeField] private CanvasGroup weaponPowerUpCanvasGroup;
-        [SerializeField] private Image weaponPowerUpIconFill;
-
-        // Paneles de flujo (pausa/victoria/derrota/inicio). Opcionales: si quedan sin
-        // asignar, SetPanel no hace nada (no crashea). Mostrar/ocultar vía CanvasGroup
-        // para no togglear GameObjects ni reconstruir jerarquías.
-        [SerializeField] private CanvasGroup startPanel;
-        [SerializeField] private CanvasGroup pausePanel;
-        // EndPanel único reutilizado para Victory y Defeat: solo cambia endTitleText.
-        [SerializeField] private CanvasGroup endPanel;
-        [SerializeField] private TMP_Text endTitleText;
+        [SerializeField] private PanelReferences _panels = new PanelReferences();
+        [SerializeField] private PowerUpUiReferences _powerUpUi = new PowerUpUiReferences();
+        [SerializeField] private WeaponPickupUiReferences _weaponPickupUi = new WeaponPickupUiReferences();
 
         // Cache de los últimos strings/valores aplicados para no reasignar si no cambió.
         private float _lastHealthTargetFill = float.NaN;
@@ -123,9 +139,9 @@ namespace OptimizationGame.MonoBehaviours
 
             // Estado inicial de los paneles de flujo: todos ocultos salvo el Start Menu
             // si el GameManager arrancó en ese estado.
-            SetPanel(pausePanel, false);
-            SetPanel(endPanel, false);
-            SetPanel(startPanel, _gameManager.IsStartMenuActive);
+            SetPanel(_panels.PausePanel, false);
+            SetPanel(_panels.EndPanel, false);
+            SetPanel(_panels.StartPanel, _gameManager.IsStartMenuActive);
 
             // HUD oculto mientras se está en el Main Menu; visible si se arranca jugando.
             // Al tocar Start, OnGameStarted lo vuelve a mostrar.
@@ -262,9 +278,9 @@ namespace OptimizationGame.MonoBehaviours
             // cuelgan del mismo OverlayCanvas y no deben solaparse. Lo ocultamos explícitamente
             // (simetría con ShowEndPanel, que oculta pausePanel al mostrar el End).
             if (paused)
-                SetPanel(endPanel, false);
+                SetPanel(_panels.EndPanel, false);
 
-            SetPanel(pausePanel, paused);
+            SetPanel(_panels.PausePanel, paused);
         }
 
         private void OnVictory()
@@ -281,10 +297,10 @@ namespace OptimizationGame.MonoBehaviours
         // Tapa la pausa si estaba visible.
         private void ShowEndPanel(string title)
         {
-            SetPanel(pausePanel, false);
-            if (endTitleText != null)
-                endTitleText.text = title;
-            SetPanel(endPanel, true);
+            SetPanel(_panels.PausePanel, false);
+            if (_panels.EndTitleText != null)
+                _panels.EndTitleText.text = title;
+            SetPanel(_panels.EndPanel, true);
         }
 
         // Una run empezó: desde el Main Menu (Start) o por Restart in-place desde Pause/End.
@@ -292,9 +308,9 @@ namespace OptimizationGame.MonoBehaviours
         // ocultar solo el startPanel.
         private void OnGameStarted()
         {
-            SetPanel(startPanel, false);
-            SetPanel(pausePanel, false);
-            SetPanel(endPanel, false);
+            SetPanel(_panels.StartPanel, false);
+            SetPanel(_panels.PausePanel, false);
+            SetPanel(_panels.EndPanel, false);
             SetHudVisible(true);
         }
 
@@ -302,9 +318,9 @@ namespace OptimizationGame.MonoBehaviours
         // ocultar el HUD. Empareja con OnGameStarted (estado opuesto).
         private void OnReturnedToMenu()
         {
-            SetPanel(startPanel, true);
-            SetPanel(pausePanel, false);
-            SetPanel(endPanel, false);
+            SetPanel(_panels.StartPanel, true);
+            SetPanel(_panels.PausePanel, false);
+            SetPanel(_panels.EndPanel, false);
             SetHudVisible(false);
         }
 
@@ -435,21 +451,21 @@ namespace OptimizationGame.MonoBehaviours
         /// </summary>
         public void UpdatePowerUp(bool active, string displayName, Sprite icon, float remaining, float duration)
         {
-            if (powerUpCanvasGroup != null)
+            if (_powerUpUi.CanvasGroup != null)
             {
-                powerUpCanvasGroup.alpha = active ? 1f : 0f;
-                powerUpCanvasGroup.interactable = active;
-                powerUpCanvasGroup.blocksRaycasts = active;
+                _powerUpUi.CanvasGroup.alpha = active ? 1f : 0f;
+                _powerUpUi.CanvasGroup.interactable = active;
+                _powerUpUi.CanvasGroup.blocksRaycasts = active;
             }
 
-            if (!active || powerUpIconFill == null)
+            if (!active || _powerUpUi.IconFill == null)
                 return;
 
             if (icon != null)
-                powerUpIconFill.sprite = icon;
+                _powerUpUi.IconFill.sprite = icon;
 
             float fill = duration > 0f ? Mathf.Clamp01(remaining / duration) : 0f;
-            powerUpIconFill.fillAmount = fill;
+            _powerUpUi.IconFill.fillAmount = fill;
         }
 
         /// <summary>
@@ -459,30 +475,30 @@ namespace OptimizationGame.MonoBehaviours
         /// </summary>
         public void UpdateTemporaryWeapon(bool active, string displayName, Sprite icon, float remaining, float duration)
         {
-            if (weaponPowerUpCanvasGroup != null)
+            if (_weaponPickupUi.CanvasGroup != null)
             {
-                weaponPowerUpCanvasGroup.alpha = active ? 1f : 0f;
-                weaponPowerUpCanvasGroup.interactable = false;
-                weaponPowerUpCanvasGroup.blocksRaycasts = false;
+                _weaponPickupUi.CanvasGroup.alpha = active ? 1f : 0f;
+                _weaponPickupUi.CanvasGroup.interactable = false;
+                _weaponPickupUi.CanvasGroup.blocksRaycasts = false;
             }
 
-            if (weaponPowerUpIconFill == null)
+            if (_weaponPickupUi.IconFill == null)
                 return;
 
             if (!active)
             {
                 // Limpiar el sprite al ocultar evita que reaparezca un icono stale la próxima vez.
-                weaponPowerUpIconFill.sprite = null;
-                weaponPowerUpIconFill.fillAmount = 0f;
+                _weaponPickupUi.IconFill.sprite = null;
+                _weaponPickupUi.IconFill.fillAmount = 0f;
                 return;
             }
 
             // Asignar siempre (incluido null): si el arma no tiene icono, limpia el anterior
             // en vez de dejar visible el de un arma previa.
-            weaponPowerUpIconFill.sprite = icon;
+            _weaponPickupUi.IconFill.sprite = icon;
 
             float fill = duration > 0f ? Mathf.Clamp01(remaining / duration) : 0f;
-            weaponPowerUpIconFill.fillAmount = fill;
+            _weaponPickupUi.IconFill.fillAmount = fill;
         }
 
         public void UpdateWeapon(string weaponName)

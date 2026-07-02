@@ -15,6 +15,9 @@ namespace OptimizationGame.MonoBehaviours
         // Cache opcional: solo si el prefab usa SpriteRenderer (pickups 2D). Puede quedar null.
         private SpriteRenderer _spriteRenderer;
         private bool _spriteRendererCached;
+        // Cache opcional: solo si el prefab usa ParticleSystem (VFX). Puede quedar null.
+        private ParticleSystem _particleSystem;
+        private bool _particleSystemCached;
 
         public GameObject GameObject => _gameObject;
         public Transform Transform => _transform;
@@ -85,6 +88,59 @@ namespace OptimizationGame.MonoBehaviours
 
             if (_spriteRenderer != null)
                 _spriteRenderer.enabled = visible;
+        }
+
+        // Resuelve el cache del ParticleSystem una sola vez. Búsqueda LOCAL sobre el
+        // GameObject envuelto (incluye hijos e inactivos): NO es GameObject.Find ni
+        // FindObjectOfType. Queda null si el prefab no tiene VFX (enemigos/proyectiles/pickups).
+        private void EnsureParticleSystemCached()
+        {
+            if (_particleSystemCached)
+                return;
+
+            _particleSystem = _gameObject.GetComponentInChildren<ParticleSystem>(true);
+            _particleSystemCached = true;
+        }
+
+        /// <summary>
+        /// Reproduce el VFX desde cero. Necesario porque reusar del pool solo hace
+        /// SetActive(true), que NO re-dispara "Play On Awake". Limpia partículas de un uso
+        /// anterior antes de reproducir. No-op si el prefab no tiene ParticleSystem.
+        /// </summary>
+        public void PlayParticles()
+        {
+            EnsureParticleSystemCached();
+            if (_particleSystem == null)
+                return;
+
+            _particleSystem.Clear(true);
+            _particleSystem.Play(true);
+        }
+
+        /// <summary>
+        /// Detiene la emisión pero deja vivir las partículas ya emitidas hasta que expiren.
+        /// No-op si el prefab no tiene ParticleSystem.
+        /// </summary>
+        public void StopParticles()
+        {
+            EnsureParticleSystemCached();
+            if (_particleSystem == null)
+                return;
+
+            _particleSystem.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+        }
+
+        /// <summary>
+        /// Detiene la emisión y limpia las partículas vivas (retorno limpio al pool).
+        /// No-op si el prefab no tiene ParticleSystem.
+        /// </summary>
+        public void ClearParticles()
+        {
+            EnsureParticleSystemCached();
+            if (_particleSystem == null)
+                return;
+
+            _particleSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         }
 
         public void OnSpawned()

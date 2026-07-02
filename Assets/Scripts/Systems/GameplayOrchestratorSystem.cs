@@ -87,6 +87,10 @@ namespace OptimizationGame.Systems
         // bool = victory (true) / defeat (false). GameManager emite el evento de UI según el flag.
         private readonly Action<bool> _endGameplay;
 
+        // Dispara el VFX de impacto pooled en una posición, sin acoplar el orquestador al
+        // tipo VfxSystem. Null-safe: si es null (o el pool no tiene "ImpactVFX"), no pasa nada.
+        private readonly Action<Vector3> _spawnImpactVfx;
+
         // Cooldown de ataque por enemigo (el timer vive en cada EnemyModel).
         private const float EnemyDamageInterval = 1f;
 
@@ -121,7 +125,8 @@ namespace OptimizationGame.Systems
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
-            Action<bool> endGameplay)
+            Action<bool> endGameplay,
+            Action<Vector3> spawnImpactVfx)
         {
             _playerModel = playerModel;
             _enemySystem = enemySystem;
@@ -146,6 +151,7 @@ namespace OptimizationGame.Systems
             _raiseWaveChanged = raiseWaveChanged;
             _raiseEnemiesLeftChanged = raiseEnemiesLeftChanged;
             _endGameplay = endGameplay;
+            _spawnImpactVfx = spawnImpactVfx;
         }
 
         public void Tick(float deltaTime)
@@ -304,6 +310,11 @@ namespace OptimizationGame.Systems
                                 _enemySystem.Enemies,
                                 enemy);
                         }
+
+                        // VFX de impacto pooled en el punto de choque. Solo en impacto real
+                        // (acá projectileHit pasa a true), NUNCA por HasReachedMaxDistance.
+                        // Antes del despawn del proyectil. Null-safe.
+                        _spawnImpactVfx?.Invoke(projectile.Position);
 
                         projectileHit = true;
                         break;

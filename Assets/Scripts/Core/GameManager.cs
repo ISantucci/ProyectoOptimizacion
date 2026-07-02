@@ -20,11 +20,10 @@ namespace OptimizationGame.Core
     public class GameManager : MonoBehaviour
     {
         [SerializeField] private Transform _playerTransform;
-        [SerializeField] private GameObject _enemyPrefab;
-        [SerializeField] private GameObject _projectilePrefab;
-        // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
-        // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
-        [SerializeField] private GameObject _pickupPrefab;
+        // Prefabs pooled agrupados en un solo campo serializado para no inflar el conteo
+        // de campos expuestos de GameManager (límite <=10). Un único [SerializeField]
+        // reemplaza a los prefabs sueltos y deja lugar para ImpactVfxPrefab sin sumar campos.
+        [SerializeField] private PrefabReferences _prefabs = new();
         [SerializeField] private CustomUpdateManager _updateManager;
         // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
@@ -51,6 +50,7 @@ namespace OptimizationGame.Core
         private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
         private PickupSystem _pickupSystem;
+        private VfxSystem _vfxSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
 
@@ -170,20 +170,30 @@ namespace OptimizationGame.Core
             _roomSystem = new RoomSystem(_gameFlowConfig);
             _combatSystem = new CombatSystem();
             _pickupSystem = new PickupSystem(() => _playerModel.Position);
+            // VfxSystem usa el ObjectPool ya creado en InitializePools (corre antes en Awake).
+            // Se recrea por run junto a los demás sistemas; ReturnAllActive lo limpia antes.
+            _vfxSystem = new VfxSystem(_objectPool);
         }
 
         private void InitializePools()
         {
             _objectPool = new ObjectPool();
-            _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
-            _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
+            _objectPool.RegisterPrefab("Enemy", _prefabs.EnemyPrefab);
+            _objectPool.RegisterPrefab("Projectile", _prefabs.ProjectilePrefab);
 
             // Pickup: opcional. Si no hay prefab, no se registra la key y el spawn degrada
             // con warning en el orquestador (sin crashear).
-            if (_pickupPrefab != null)
-                _objectPool.RegisterPrefab("Pickup", _pickupPrefab);
+            if (_prefabs.PickupPrefab != null)
+                _objectPool.RegisterPrefab("Pickup", _prefabs.PickupPrefab);
             else
-                Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
+                Debug.LogWarning("GameManager: PickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
+
+            // ImpactVFX: opcional. Si no hay prefab, no se registra la key y SpawnImpact
+            // degrada (view null) sin crashear. Warning único en init, nunca por frame.
+            if (_prefabs.ImpactVfxPrefab != null)
+                _objectPool.RegisterPrefab("ImpactVFX", _prefabs.ImpactVfxPrefab);
+            else
+                Debug.LogWarning("GameManager: ImpactVfxPrefab sin asignar. Los VFX de impacto no se mostrarán (gameplay sigue funcionando).");
 
             if (_poolConfig == null)
             {
@@ -193,8 +203,10 @@ namespace OptimizationGame.Core
 
             _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
-            if (_pickupPrefab != null)
+            if (_prefabs.PickupPrefab != null)
                 _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
+            if (_prefabs.ImpactVfxPrefab != null)
+                _objectPool.Prewarm("ImpactVFX", _poolConfig.VfxPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -234,7 +246,8 @@ namespace OptimizationGame.Core
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
-                EndGameplay);
+                EndGameplay,
+                pos => _vfxSystem?.SpawnImpact(pos));
         }
 
         // InputReader vive TODA la escena: se crea y registra UNA sola vez (Awake).
@@ -261,6 +274,7 @@ namespace OptimizationGame.Core
             _updateManager.Register(_projectileSystem);
             _updateManager.Register(_waveSystem);
             _updateManager.Register(_pickupSystem);
+            _updateManager.Register(_vfxSystem);
             _updateManager.Register(_orchestrator);
         }
 
@@ -274,6 +288,7 @@ namespace OptimizationGame.Core
             _updateManager.Unregister(_projectileSystem);
             _updateManager.Unregister(_waveSystem);
             _updateManager.Unregister(_pickupSystem);
+            _updateManager.Unregister(_vfxSystem);
             _updateManager.Unregister(_orchestrator);
         }
 
@@ -294,6 +309,11 @@ namespace OptimizationGame.Core
             foreach (var kvp in _pickupViews)
                 _objectPool.Despawn("Pickup", kvp.Value);
             _pickupViews.Clear();
+
+            // VFX activos al pool: corre con la instancia ACTUAL de _vfxSystem, antes de que
+            // RebuildRunSystems la reemplace. Cubre Restart y ReturnToMainMenu (ambos pasan
+            // por acá). Evita VFX activos acumulados y views perdidas del pool entre runs.
+            _vfxSystem?.ReturnAllActive();
         }
 
         // Reconstruye los sistemas puros de gameplay desde cero para una run nueva.
@@ -534,5 +554,20 @@ namespace OptimizationGame.Core
         }
 
         public PlayerModel GetPlayerModel() => _playerModel;
+
+        // Agrupa los prefabs pooled en un solo campo serializado. Cuenta como UN campo
+        // expuesto de GameManager (respeta el límite <=10) pero expone N referencias en el
+        // Inspector. ImpactVfxPrefab queda declarado pero AÚN NO SE USA (Bloque VFX futuro):
+        // el proyecto compila y corre aunque quede sin asignar.
+        [Serializable]
+        private class PrefabReferences
+        {
+            public GameObject EnemyPrefab;
+            public GameObject ProjectilePrefab;
+            // Opcional: si queda sin asignar, los drops no se muestran (gameplay sigue).
+            public GameObject PickupPrefab;
+            // Reservado para el sistema de VFX de impacto. Todavía no se registra ni se usa.
+            public GameObject ImpactVfxPrefab;
+        }
     }
 }
