@@ -93,8 +93,13 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
+<<<<<<< HEAD
   m_LightingDataAsset: {fileID: 112000000, guid: 37b2523920f75db46a691a3210142643, type: 2}
   m_LightingSettings: {fileID: 4890085278179872738, guid: ec216a57b8f71b54bb8af97e47a94c8d, type: 2}
+=======
+  m_LightingDataAsset: {fileID: 20201, guid: 0000000000000000f000000000000000, type: 0}
+  m_LightingSettings: {fileID: 0}
+>>>>>>> 51a69830d5ad9d627446fc46591e67ce42ca152b
 --- !u!196 &4
 NavMeshSettings:
   serializedVersion: 2
@@ -666,7 +671,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
   m_Shadows:
-    m_Type: 1
+    m_Type: 2
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -699,13 +704,17 @@ Light:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingLayerMask: 1
-  m_Lightmapping: 1
+  m_Lightmapping: 4
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
   m_ColorTemperature: 6570
   m_UseColorTemperature: 0
+<<<<<<< HEAD
   m_BoundingSphereOverride: {x: 0, y: 1e-45, z: 0, w: 0}
+=======
+  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
+>>>>>>> 51a69830d5ad9d627446fc46591e67ce42ca152b
   m_UseBoundingSphereOverride: 0
   m_UseViewFrustumForShadowCasterCull: 1
   m_ForceVisible: 0
@@ -765,6 +774,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1350973573}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+<<<<<<< HEAD
 --- !u!1001 &1947389076
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1290,6 +1300,8 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d1458649921e1a44499ce59312bbaccb, type: 3}
+=======
+>>>>>>> 51a69830d5ad9d627446fc46591e67ce42ca152b
 --- !u!1001 &7456130474383367127
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1358,4 +1370,7 @@ SceneRoots:
   - {fileID: 107734374}
   - {fileID: 548886046}
   - {fileID: 1270199480}
+<<<<<<< HEAD
   - {fileID: 1947389076}
+=======
+>>>>>>> 51a69830d5ad9d627446fc46591e67ce42ca152b
