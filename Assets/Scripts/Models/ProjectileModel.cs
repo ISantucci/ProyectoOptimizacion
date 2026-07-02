@@ -16,9 +16,13 @@ namespace OptimizationGame.Models
         public float AreaRadius { get; }
         // Key con la que se devuelve la EntityView al ObjectPool. Fallback seguro: "Projectile".
         public string PoolKey { get; }
+        // Key del VFX de impacto a spawnear en el choque. Fallback seguro: "ImpactVFX".
+        // La decide el arma (PlayerSystem.ResolveImpactVfxKey); viaja en el modelo para que
+        // el orquestador dispare el VFX correcto sin conocer el arma.
+        public string ImpactVfxPoolKey { get; }
 
         public ProjectileModel(int id, float speed, float damage, float maxDistance,
-            float areaRadius = 0f, string poolKey = "Projectile")
+            float areaRadius = 0f, string poolKey = "Projectile", string impactVfxPoolKey = "ImpactVFX")
         {
             ID = id;
             Speed = speed;
@@ -26,6 +30,7 @@ namespace OptimizationGame.Models
             _maxDistance = maxDistance;
             AreaRadius = areaRadius;
             PoolKey = string.IsNullOrEmpty(poolKey) ? "Projectile" : poolKey;
+            ImpactVfxPoolKey = string.IsNullOrEmpty(impactVfxPoolKey) ? "ImpactVFX" : impactVfxPoolKey;
             Position = Vector3.zero;
             Direction = Vector3.forward;
             TraveledDistance = 0;

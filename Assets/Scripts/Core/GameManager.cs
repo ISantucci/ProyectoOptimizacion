@@ -195,6 +195,12 @@ namespace OptimizationGame.Core
             else
                 Debug.LogWarning("GameManager: ImpactVfxPrefab sin asignar. Los VFX de impacto no se mostrarán (gameplay sigue funcionando).");
 
+            // ImpactVFX por arma (Bloque 1): registra el VFX propio del arma base con su key
+            // derivada ("ImpactVFX_<WeaponId>"), sin sacar el fallback global "ImpactVFX".
+            // Las armas temporales de pickup se registran lazy en FireProjectile (no hay una
+            // lista de todas las WeaponData accesible sin escanear el árbol de drops).
+            RegisterWeaponImpactVfx(_baseWeapon);
+
             if (_poolConfig == null)
             {
                 Debug.LogError("GameManager missing PoolConfig reference. Pools will not be prewarmed (they will still grow on demand).");
@@ -207,6 +213,23 @@ namespace OptimizationGame.Core
                 _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
             if (_prefabs.ImpactVfxPrefab != null)
                 _objectPool.Prewarm("ImpactVFX", _poolConfig.VfxPrewarm);
+        }
+
+        // Registra el ImpactVFX propio de un arma (si define prefab + WeaponId) con la MISMA
+        // key que deriva PlayerSystem.ResolveImpactVfxKey ("ImpactVFX_<WeaponId>"). Idempotente
+        // (RegisterPrefab no pisa) y null-safe. Prewarma con VfxPrewarm solo si es un registro
+        // nuevo y hay PoolConfig, para no re-crecer una pool ya prewarmeada. No toca el fallback
+        // global "ImpactVFX". Reutilizable para futuras armas (temporales) sin acoplar de más.
+        private void RegisterWeaponImpactVfx(WeaponData weapon)
+        {
+            if (weapon == null || weapon.ImpactVfxPrefab == null || string.IsNullOrEmpty(weapon.WeaponId))
+                return;
+
+            string key = "ImpactVFX_" + weapon.WeaponId;
+            bool alreadyRegistered = _objectPool.HasPrefab(key);
+            _objectPool.RegisterPrefab(key, weapon.ImpactVfxPrefab);
+            if (!alreadyRegistered && _poolConfig != null)
+                _objectPool.Prewarm(key, _poolConfig.VfxPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -247,7 +270,7 @@ namespace OptimizationGame.Core
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
                 EndGameplay,
-                pos => _vfxSystem?.SpawnImpact(pos));
+                (pos, key) => _vfxSystem?.SpawnImpact(pos, key));
         }
 
         // InputReader vive TODA la escena: se crea y registra UNA sola vez (Awake).
@@ -527,6 +550,18 @@ namespace OptimizationGame.Core
                 }
 
                 _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab);
+            }
+
+            // ImpactVFX por arma: registro lazy simétrico al del proyectil. Cubre armas
+            // temporales de pickup (el arma base ya se registró/prewarmeó en InitializePools).
+            // Si la key es específica y aún falta, se registra el prefab del arma activa.
+            // Es cosmético: si el prefab faltara, NO se aborta el disparo (a diferencia del
+            // proyectil); el impacto simplemente no muestra VFX (view null, sin crash).
+            if (projectile.ImpactVfxPoolKey != "ImpactVFX" && !_objectPool.HasPrefab(projectile.ImpactVfxPoolKey))
+            {
+                var impactPrefab = _playerSystem.ActiveImpactVfxPrefab;
+                if (impactPrefab != null)
+                    _objectPool.RegisterPrefab(projectile.ImpactVfxPoolKey, impactPrefab);
             }
 
             var view = _objectPool.Spawn(projectile.PoolKey, projectile.Position);

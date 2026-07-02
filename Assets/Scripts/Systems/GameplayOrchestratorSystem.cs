@@ -87,9 +87,10 @@ namespace OptimizationGame.Systems
         // bool = victory (true) / defeat (false). GameManager emite el evento de UI según el flag.
         private readonly Action<bool> _endGameplay;
 
-        // Dispara el VFX de impacto pooled en una posición, sin acoplar el orquestador al
-        // tipo VfxSystem. Null-safe: si es null (o el pool no tiene "ImpactVFX"), no pasa nada.
-        private readonly Action<Vector3> _spawnImpactVfx;
+        // Dispara el VFX de impacto pooled en una posición, con la key del proyectil (VFX propio
+        // del arma o fallback "ImpactVFX"), sin acoplar el orquestador al tipo VfxSystem.
+        // Null-safe: si es null (o el pool no tiene la key), no pasa nada.
+        private readonly Action<Vector3, string> _spawnImpactVfx;
 
         // Cooldown de ataque por enemigo (el timer vive en cada EnemyModel).
         private const float EnemyDamageInterval = 1f;
@@ -126,7 +127,7 @@ namespace OptimizationGame.Systems
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
             Action<bool> endGameplay,
-            Action<Vector3> spawnImpactVfx)
+            Action<Vector3, string> spawnImpactVfx)
         {
             _playerModel = playerModel;
             _enemySystem = enemySystem;
@@ -311,10 +312,11 @@ namespace OptimizationGame.Systems
                                 enemy);
                         }
 
-                        // VFX de impacto pooled en el punto de choque. Solo en impacto real
+                        // VFX de impacto pooled en el punto de choque, con la key del arma que
+                        // viaja en el proyectil (o fallback "ImpactVFX"). Solo en impacto real
                         // (acá projectileHit pasa a true), NUNCA por HasReachedMaxDistance.
                         // Antes del despawn del proyectil. Null-safe.
-                        _spawnImpactVfx?.Invoke(projectile.Position);
+                        _spawnImpactVfx?.Invoke(projectile.Position, projectile.ImpactVfxPoolKey);
 
                         projectileHit = true;
                         break;

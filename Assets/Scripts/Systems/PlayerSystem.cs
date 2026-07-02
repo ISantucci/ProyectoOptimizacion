@@ -38,6 +38,11 @@ namespace OptimizationGame.Systems
         // NO conoce el ObjectPool: solo expone el dato.
         public GameObject ActiveProjectilePrefab => _activeWeapon != null ? _activeWeapon.ProjectilePrefab : null;
 
+        // Prefab del VFX de impacto del arma activa (puede ser null = usar VFX default).
+        // Mismo patrón que ActiveProjectilePrefab: GameManager lo consulta para registrar el
+        // prefab en el ObjectPool. PlayerSystem NO conoce el pool: solo expone el dato.
+        public GameObject ActiveImpactVfxPrefab => _activeWeapon != null ? _activeWeapon.ImpactVfxPrefab : null;
+
         // --- Estado del speed boost expuesto para la UI (solo lectura) ---
         public bool HasActiveSpeedBoost => _speedBoostTimer > 0f;
         public float SpeedBoostRemaining => _speedBoostTimer;
@@ -205,6 +210,7 @@ namespace OptimizationGame.Systems
             // (bloque futuro). Por ahora solo se transporta el dato.
             float areaRadius = _activeWeapon != null ? _activeWeapon.AreaRadius : 0f;
             string poolKey = ResolvePoolKey();
+            string impactVfxPoolKey = ResolveImpactVfxKey();
 
             var projectile = new ProjectileModel(
                 projectileId,
@@ -212,7 +218,8 @@ namespace OptimizationGame.Systems
                 damage,
                 maxDistance,
                 areaRadius,
-                poolKey
+                poolKey,
+                impactVfxPoolKey
             );
             projectile.Position = _model.Position;
             projectile.Direction = GetFireDirection();
@@ -232,6 +239,21 @@ namespace OptimizationGame.Systems
                 return "Projectile_" + _activeWeapon.WeaponId;
             }
             return "Projectile";
+        }
+
+        // Deriva la key del VFX de impacto del arma activa. Mismo criterio que ResolvePoolKey:
+        // key específica SOLO si el arma tiene ImpactVfxPrefab Y WeaponId no vacío; en cualquier
+        // otro caso, fallback seguro a "ImpactVFX" (VFX default). Garantiza que si la key es
+        // específica, el prefab existe para que GameManager lo registre.
+        private string ResolveImpactVfxKey()
+        {
+            if (_activeWeapon != null &&
+                _activeWeapon.ImpactVfxPrefab != null &&
+                !string.IsNullOrEmpty(_activeWeapon.WeaponId))
+            {
+                return "ImpactVFX_" + _activeWeapon.WeaponId;
+            }
+            return "ImpactVFX";
         }
     }
 }

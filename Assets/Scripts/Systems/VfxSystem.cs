@@ -28,15 +28,28 @@ namespace OptimizationGame.Systems
         }
 
         /// <summary>
-        /// Spawnea un VFX de impacto en la posición dada. Degrada silenciosamente si no hay
-        /// pool o si la key "ImpactVFX" no está configurada (view null): no crashea ni spamea.
+        /// Spawnea un VFX de impacto en la posición dada usando la key del arma/proyectil.
+        /// Si impactPoolKey es null/empty, cae al fallback "ImpactVFX". Degrada silenciosamente
+        /// si no hay pool o si la key no está configurada (view null): no crashea ni spamea.
         /// </summary>
-        public void SpawnImpact(Vector3 position)
+        public void SpawnImpact(Vector3 position, string impactPoolKey)
         {
-            if (_objectPool == null)
+            string key = string.IsNullOrEmpty(impactPoolKey) ? ImpactVfxPoolKey : impactPoolKey;
+            Spawn(key, position, DefaultImpactLifetime);
+        }
+
+        /// <summary>
+        /// Core genérico de spawn de VFX pooled: toma una EntityView del pool por 'poolKey',
+        /// la reproduce y la registra con su lifetime para que Tick la devuelva al agotarse.
+        /// No conoce armas ni enemigos: solo key + posición + duración. Base para DeathVFX
+        /// (bloque futuro). Degrada sin crashear si falta pool/key.
+        /// </summary>
+        public void Spawn(string poolKey, Vector3 position, float lifetime)
+        {
+            if (_objectPool == null || string.IsNullOrEmpty(poolKey))
                 return;
 
-            var view = _objectPool.Spawn(ImpactVfxPoolKey, position);
+            var view = _objectPool.Spawn(poolKey, position);
             if (view == null)
                 return;
 
@@ -46,7 +59,7 @@ namespace OptimizationGame.Systems
             view.ClearParticles();
             view.PlayParticles();
 
-            _activeVfx.Add(new VfxModel(ImpactVfxPoolKey, view, DefaultImpactLifetime));
+            _activeVfx.Add(new VfxModel(poolKey, view, lifetime));
         }
 
         public void Tick(float deltaTime)

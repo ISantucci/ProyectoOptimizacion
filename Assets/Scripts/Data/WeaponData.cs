@@ -19,10 +19,14 @@ namespace OptimizationGame.Data
         // Prefab visual propio del proyectil de esta arma. OPCIONAL: si queda null, el
         // disparo usa el proyectil default (key "Projectile"). El pool le crea su EntityView.
         [SerializeField] private GameObject projectilePrefab;
+        // Prefab visual propio del VFX de impacto de esta arma. OPCIONAL: si queda null, el
+        // impacto usa el VFX default (key "ImpactVFX"). Mismo patrón que projectilePrefab.
+        [SerializeField] private GameObject impactVfxPrefab;
         // Radio de daño en área al impactar. 0 = daño normal a un solo enemigo. >0 = área.
         [SerializeField] private float areaRadius;
 
         public GameObject ProjectilePrefab => projectilePrefab;
+        public GameObject ImpactVfxPrefab => impactVfxPrefab;
         public float AreaRadius => areaRadius;
         public bool HasAreaDamage => areaRadius > 0f;
     }
