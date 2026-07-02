@@ -19,25 +19,39 @@ namespace OptimizationGame.Core
     /// </summary>
     public class GameManager : MonoBehaviour
     {
+        // Prefabs pooled agrupados en una clase serializable para respetar el límite de
+        // 10 campos expuestos por script (consigna). No cambia comportamiento: el pool los
+        // sigue recibiendo igual, solo cambia la ruta de acceso interna (_prefabs.X).
+        [Serializable]
+        private class PrefabReferences
+        {
+            public GameObject EnemyPrefab;
+            public GameObject ProjectilePrefab;
+            // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
+            // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
+            public GameObject PickupPrefab;
+        }
+
+        // Configuración data-driven agrupada (mismo motivo: límite de campos expuestos).
+        [Serializable]
+        private class ConfigReferences
+        {
+            public PoolConfig PoolConfig;
+            // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
+            // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
+            public WeaponData BaseWeapon;
+            // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
+            public GameFlowConfig GameFlowConfig;
+            public List<RoomSpawnGroup> RoomSpawnGroups = new();
+        }
+
         [SerializeField] private Transform _playerTransform;
-        [SerializeField] private GameObject _enemyPrefab;
-        [SerializeField] private GameObject _projectilePrefab;
-        // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
-        // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
-        [SerializeField] private GameObject _pickupPrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
         // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
         [SerializeField] private Camera _mainCamera;
-        [SerializeField] private PoolConfig _poolConfig;
-
-        // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
-        // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
-        [SerializeField] private WeaponData _baseWeapon;
-
-        // Flujo data-driven: GameFlowConfig define QUÉ pasa; RoomSpawnGroups, DÓNDE.
-        [SerializeField] private GameFlowConfig _gameFlowConfig;
-        [SerializeField] private List<RoomSpawnGroup> _roomSpawnGroups = new();
+        [SerializeField] private PrefabReferences _prefabs = new();
+        [SerializeField] private ConfigReferences _config = new();
 
         // Menú de inicio OPT-IN. Default false = flujo actual intacto (arranca solo).
         // Si se activa, el gameplay arranca pausado mostrando el Start Panel hasta que
@@ -148,14 +162,14 @@ namespace OptimizationGame.Core
             var playerConfig = new PlayerConfig();
 
             // Nombre de arma para el HUD: desde WeaponData si está asignado; si no, legacy + warning.
-            if (_baseWeapon != null)
+            if (_config.BaseWeapon != null)
             {
-                _weaponName = _baseWeapon.DisplayName;
+                _weaponName = _config.BaseWeapon.DisplayName;
             }
             else
             {
                 _weaponName = playerConfig.WeaponName;
-                Debug.LogWarning("GameManager: _baseWeapon sin asignar en el Inspector. Disparo y HUD usan valores legacy de PlayerConfig.");
+                Debug.LogWarning("GameManager: BaseWeapon sin asignar en el Inspector. Disparo y HUD usan valores legacy de PlayerConfig.");
             }
 
             _playerModel = new PlayerModel(playerConfig.MaxHealth, playerConfig.MoveSpeed);
@@ -163,11 +177,11 @@ namespace OptimizationGame.Core
             // tanto en el boot como al reconstruir la run en cada StartRun.
             _playerModel.Position = _playerSpawnPosition;
 
-            _playerSystem = new PlayerSystem(_playerModel, playerConfig, _baseWeapon);
+            _playerSystem = new PlayerSystem(_playerModel, playerConfig, _config.BaseWeapon);
             _enemySystem = new EnemySystem(() => _playerModel.Position);
             _projectileSystem = new ProjectileSystem();
             _waveSystem = new WaveSystem();
-            _roomSystem = new RoomSystem(_gameFlowConfig);
+            _roomSystem = new RoomSystem(_config.GameFlowConfig);
             _combatSystem = new CombatSystem();
             _pickupSystem = new PickupSystem(() => _playerModel.Position);
         }
@@ -175,26 +189,26 @@ namespace OptimizationGame.Core
         private void InitializePools()
         {
             _objectPool = new ObjectPool();
-            _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
-            _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
+            _objectPool.RegisterPrefab("Enemy", _prefabs.EnemyPrefab);
+            _objectPool.RegisterPrefab("Projectile", _prefabs.ProjectilePrefab);
 
             // Pickup: opcional. Si no hay prefab, no se registra la key y el spawn degrada
             // con warning en el orquestador (sin crashear).
-            if (_pickupPrefab != null)
-                _objectPool.RegisterPrefab("Pickup", _pickupPrefab);
+            if (_prefabs.PickupPrefab != null)
+                _objectPool.RegisterPrefab("Pickup", _prefabs.PickupPrefab);
             else
-                Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
+                Debug.LogWarning("GameManager: PickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
 
-            if (_poolConfig == null)
+            if (_config.PoolConfig == null)
             {
                 Debug.LogError("GameManager missing PoolConfig reference. Pools will not be prewarmed (they will still grow on demand).");
                 return;
             }
 
-            _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
-            _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
-            if (_pickupPrefab != null)
-                _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
+            _objectPool.Prewarm("Enemy", _config.PoolConfig.EnemyPrewarm);
+            _objectPool.Prewarm("Projectile", _config.PoolConfig.ProjectilePrewarm);
+            if (_prefabs.PickupPrefab != null)
+                _objectPool.Prewarm("Pickup", _config.PoolConfig.PickupPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -213,7 +227,7 @@ namespace OptimizationGame.Core
                 _objectPool,
                 _enemyViews,
                 _projectileViews,
-                _roomSpawnGroups,
+                _config.RoomSpawnGroups,
                 _playerTransform,
                 _pickupSystem,
                 _pickupViews,
