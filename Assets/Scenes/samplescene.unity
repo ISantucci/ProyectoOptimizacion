@@ -208,7 +208,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3708358624802371871, guid: f496fcb1c7ee0f849947a8e6200e143d, type: 3}
       propertyPath: m_Name
-      value: civilian_girl
+      value: Player
       objectReference: {fileID: 0}
     - target: {fileID: 4052514163483321253, guid: f496fcb1c7ee0f849947a8e6200e143d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -248,6 +248,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4052514163483321253, guid: f496fcb1c7ee0f849947a8e6200e143d, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8202434772349513130, guid: f496fcb1c7ee0f849947a8e6200e143d, type: 3}
+      propertyPath: m_HDR
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8202434772349513130, guid: f496fcb1c7ee0f849947a8e6200e143d, type: 3}
+      propertyPath: m_AllowMSAA
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
@@ -513,7 +521,7 @@ MonoBehaviour:
     EnemyPrefab: {fileID: 4414871117303439921, guid: aef9a3e063e740f4d8100584de73ceb4, type: 3}
     ProjectilePrefab: {fileID: 1122964723992546, guid: 674adf642abf5614aae2995443c8250f, type: 3}
     PickupPrefab: {fileID: 1708123539570047673, guid: 2618f222b2a6bf44cae0e4d2ec48cd35, type: 3}
-    ImpactVfxPrefab: {fileID: 5162910912013668194, guid: cf82839c411151342a7b2337bda9fb34, type: 3}
+    ImpactVfxPrefab: {fileID: 4503612902121041701, guid: 5a936c83b1746f14f9100db745e94f04, type: 3}
   _updateManager: {fileID: 1294942944}
   _mainCamera: {fileID: 426270310}
   _poolConfig: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
@@ -530,6 +538,9 @@ MonoBehaviour:
     - {fileID: 1916299575}
     PlayerStart: {fileID: 0}
   _startWithMenu: 1
+  _sceneRefs:
+    PlayerRoot: {fileID: 0}
+    RoomRoot: {fileID: 1745541359}
 --- !u!114 &1294942944
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -676,6 +687,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1350973573}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1745541359 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8344127163319144463, guid: 553e9f156fc2ef342802321221dee386, type: 3}
+  m_PrefabInstance: {fileID: 1270199480}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1767268621
 GameObject:
   m_ObjectHideFlags: 0
@@ -710,7 +726,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
   m_Shadows:
-    m_Type: 1
+    m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1

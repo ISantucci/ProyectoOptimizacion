@@ -15,10 +15,11 @@ MonoBehaviour:
   WeaponId: Bazooka
   DisplayName: Bazooka
   Damage: 30
-  FireCooldown: 1
+  FireCooldown: 1.5
   ProjectileSpeed: 50
   ProjectileMaxDistance: 25
   Duration: 8
   DebugColor: {r: 1, g: 1, b: 1, a: 1}
   projectilePrefab: {fileID: 0}
+  impactVfxPrefab: {fileID: 0}
   areaRadius: 10

@@ -15,10 +15,11 @@ MonoBehaviour:
   WeaponId: BaseWeapon
   DisplayName: BaseWeapon
   Damage: 10
-  FireCooldown: 0.1
+  FireCooldown: 0.5
   ProjectileSpeed: 50
   ProjectileMaxDistance: 25
   Duration: 0
   DebugColor: {r: 1, g: 1, b: 1, a: 1}
   projectilePrefab: {fileID: 0}
+  impactVfxPrefab: {fileID: 0}
   areaRadius: 0

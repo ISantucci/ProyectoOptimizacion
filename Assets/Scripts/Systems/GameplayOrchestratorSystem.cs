@@ -76,6 +76,10 @@ namespace OptimizationGame.Systems
         // Radio de recogida del pickup (XZ).
         private const float PickupCollectRadius = 1.5f;
 
+        // Altura sobre el piso a la que se eleva el pickup al spawnear, para que el sprite
+        // no quede coplanar con el suelo (oclusión/z-fighting). No afecta la recolección (XZ).
+        private const float PickupSpawnHeightOffset = 0.5f;
+
         // DropSystem: clase pura, stateless. Instanciado aquí para no tocar el wiring de
         // GameManager. NO es ITickable; solo se invoca puntualmente al morir un enemigo.
         private readonly DropSystem _dropSystem = new DropSystem();
@@ -389,7 +393,15 @@ namespace OptimizationGame.Systems
             if (data == null || _pickupSystem == null)
                 return;
 
-            var view = _objectPool.Spawn("Pickup", position);
+            // Offset vertical: el pickup se dropea en enemy.Position (Y ≈ 0, a ras del piso).
+            // EntityView.SetPosition fija la posición absoluta y pisa el offset local del prefab,
+            // dejando el sprite plano coplanar con el suelo (oclusión/z-fighting). Lo elevamos
+            // para que quede visible sobre el piso. Solo afecta la posición de spawn; la
+            // recolección de PickupSystem es por distancia XZ (ignora Y), así que no cambia.
+            Vector3 pickupPosition = position;
+            pickupPosition.y += PickupSpawnHeightOffset;
+
+            var view = _objectPool.Spawn("Pickup", pickupPosition);
             if (view == null)
             {
                 if (!_loggedMissingPickupPool)
@@ -408,7 +420,7 @@ namespace OptimizationGame.Systems
             // Garantizar que arranca visible.
             view.SetVisible(true);
 
-            var model = new PickupModel(_nextPickupId++, data, position, PickupCollectRadius);
+            var model = new PickupModel(_nextPickupId++, data, pickupPosition, PickupCollectRadius);
             _pickupViews[model] = view;
             _pickupSystem.AddPickup(model);
         }
@@ -558,7 +570,6 @@ namespace OptimizationGame.Systems
             {
                 _gameState = GameState.Defeat;
                 _endGameplay?.Invoke(false);
-                Debug.Log("GAME OVER - PLAYER DEFEATED");
                 return;
             }
 
@@ -575,7 +586,6 @@ namespace OptimizationGame.Systems
                 {
                     _gameState = GameState.Victory;
                     _endGameplay?.Invoke(true);
-                    Debug.Log("VICTORY - ALL ROOMS COMPLETED");
                 }
             }
         }

@@ -43,6 +43,11 @@ namespace OptimizationGame.Core
         // un botón llame StartGameFromUI(). El botón se conecta a mano en Unity.
         [SerializeField] private bool _startWithMenu = false;
 
+        // Roots visuales de gameplay (player + escenario). Se apagan en Main Menu para
+        // no renderizar ni cargar GPU que no hace falta hasta tocar Play. Un solo campo
+        // serializado (contenedor) para respetar el límite <=10 campos de GameManager.
+        [SerializeField] private GameplaySceneReferences _sceneRefs = new();
+
         private PlayerSystem _playerSystem;
         private EnemySystem _enemySystem;
         private ProjectileSystem _projectileSystem;
@@ -126,11 +131,15 @@ namespace OptimizationGame.Core
                 // InputReader nunca encuentre _playerModel/_playerSystem en null.
                 _gameState = GameState.Menu;
                 _updateManager.SetPaused(true);
+                // En Menu el player y el escenario no hacen falta: se apagan hasta Start.
+                SetGameplaySceneActive(false);
             }
             else
             {
                 // Boot directo a gameplay: reusa los sistemas recién creados (sin rebuild).
                 // GameStarted/HUD inicial los maneja UIManager.Start (corre después de Awake).
+                // Se asegura que los roots estén activos aunque en escena quedaran apagados.
+                SetGameplaySceneActive(true);
                 StartGameplay();
                 _gameState = GameState.Playing;
             }
@@ -356,6 +365,10 @@ namespace OptimizationGame.Core
         // _playerModel/_playerSystem (InputReader sigue tickeando y necesita ambos válidos).
         private void StartRun()
         {
+            // Reactivar player + escenario ANTES de resetear posición/spawn y arrancar.
+            // Idempotente: en Restart ya están activos, así que esto no los apaga.
+            SetGameplaySceneActive(true);
+
             CleanupRunEntities();
             RebuildRunSystems();
 
@@ -444,12 +457,11 @@ namespace OptimizationGame.Core
         }
 
         /// <summary>
-        /// Placeholder seguro de Options. Todavía no hay menú real de opciones; solo
-        /// deja traza para verificar el wiring del botón. La invoca UIManager.
+        /// Placeholder seguro de Options. Todavía no hay menú real de opciones.
+        /// La invoca UIManager desde el botón Options.
         /// </summary>
         public void OpenOptions()
         {
-            Debug.Log("GameManager: OpenOptions() (placeholder, sin menú de opciones aún).");
         }
 
         /// <summary>
@@ -463,6 +475,8 @@ namespace OptimizationGame.Core
         public void ReturnToMainMenu()
         {
             CleanupRunEntities();
+            // Vuelta al Menu: player y escenario se apagan de nuevo (no hacen falta hasta Start).
+            SetGameplaySceneActive(false);
             _gameplayEnded = false;
             _gameState = GameState.Menu;
             _updateManager.SetPaused(true);
@@ -592,8 +606,7 @@ namespace OptimizationGame.Core
 
         // Agrupa los prefabs pooled en un solo campo serializado. Cuenta como UN campo
         // expuesto de GameManager (respeta el límite <=10) pero expone N referencias en el
-        // Inspector. ImpactVfxPrefab queda declarado pero AÚN NO SE USA (Bloque VFX futuro):
-        // el proyecto compila y corre aunque quede sin asignar.
+        // Inspector.
         [Serializable]
         private class PrefabReferences
         {
@@ -601,8 +614,27 @@ namespace OptimizationGame.Core
             public GameObject ProjectilePrefab;
             // Opcional: si queda sin asignar, los drops no se muestran (gameplay sigue).
             public GameObject PickupPrefab;
-            // Reservado para el sistema de VFX de impacto. Todavía no se registra ni se usa.
+            // Opcional: si queda sin asignar, los VFX de impacto no se muestran (gameplay sigue).
             public GameObject ImpactVfxPrefab;
+        }
+
+        // Roots de escena que se apagan/encienden según Menu vs Playing. Un solo campo
+        // serializado en GameManager (respeta <=10) que expone 2 referencias en el Inspector.
+        [Serializable]
+        private class GameplaySceneReferences
+        {
+            public GameObject PlayerRoot;
+            public GameObject RoomRoot;
+        }
+
+        // Enciende/apaga los roots visuales de gameplay. Null-safe: si un root no está
+        // asignado, degrada en silencio (sin crash, sin log por frame, sin bloquear Start).
+        private void SetGameplaySceneActive(bool active)
+        {
+            if (_sceneRefs.PlayerRoot != null)
+                _sceneRefs.PlayerRoot.SetActive(active);
+            if (_sceneRefs.RoomRoot != null)
+                _sceneRefs.RoomRoot.SetActive(active);
         }
     }
 }
