@@ -6,33 +6,61 @@ namespace OptimizationGame.Core
 {
     public class CustomUpdateManager : MonoBehaviour
     {
-        private List<ITickable> _tickables = new();
+        // Tickables que se detienen durante la pausa/fin de juego (gameplay puro).
+        private readonly List<ITickable> _pausableTickables = new();
+        // Tickables que siguen corriendo aunque el juego esté pausado.
+        // Caso clave: InputReader, para poder despausar con Escape.
+        private readonly List<ITickable> _alwaysTickables = new();
 
-        // Pausa simple del loop. GameManager la activa en estados finales
-        // (Defeat/Victory) para frenar la simulación de los sistemas puros.
-        public bool IsPaused { get; set; }
+        // Pausa del loop. La activa GameManager en pausa por Escape y en estados
+        // finales (Defeat/Victory) para frenar la simulación de los sistemas puros.
+        public bool IsPaused { get; private set; }
 
-        public void Register(ITickable tickable)
+        /// <summary>
+        /// Registra un tickable. Si pauseWithGameplay es true (default) se detiene
+        /// durante la pausa; si es false (InputReader) sigue tickeando siempre.
+        /// </summary>
+        public void Register(ITickable tickable, bool pauseWithGameplay = true)
         {
-            if (!_tickables.Contains(tickable))
-                _tickables.Add(tickable);
+            if (tickable == null)
+                return;
+
+            if (pauseWithGameplay)
+            {
+                if (!_pausableTickables.Contains(tickable))
+                    _pausableTickables.Add(tickable);
+            }
+            else
+            {
+                if (!_alwaysTickables.Contains(tickable))
+                    _alwaysTickables.Add(tickable);
+            }
         }
 
         public void Unregister(ITickable tickable)
         {
-            _tickables.Remove(tickable);
+            _pausableTickables.Remove(tickable);
+            _alwaysTickables.Remove(tickable);
+        }
+
+        public void SetPaused(bool paused)
+        {
+            IsPaused = paused;
         }
 
         private void Update()
         {
+            float deltaTime = Time.deltaTime;
+
+            // Siempre-activos primero (InputReader): permiten despausar con Escape.
+            for (int i = 0; i < _alwaysTickables.Count; i++)
+                _alwaysTickables[i].Tick(deltaTime);
+
             if (IsPaused)
                 return;
 
-            float deltaTime = Time.deltaTime;
-            for (int i = 0; i < _tickables.Count; i++)
-            {
-                _tickables[i].Tick(deltaTime);
-            }
+            for (int i = 0; i < _pausableTickables.Count; i++)
+                _pausableTickables[i].Tick(deltaTime);
         }
     }
 }

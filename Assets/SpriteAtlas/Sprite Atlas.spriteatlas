@@ -51,26 +51,41 @@ SpriteAtlas:
     cachedData: {fileID: 0}
     packedSpriteRenderDataKeys:
     - 34fccb406a6955341b2813638f7477f3: 21300000
+    - ff3262c286b9f164fad29183c2e0642f: 21300000
     - 3b7e2c833bac19849b9b3859ab0704dc: 21300000
+    - 407ace9358c315e4289fe0595fa88454: 21300000
+    - c2c36784246bec74dbffbc2ab8cfaa06: 21300000
     - 4696ab2759247a74eb30062185f0332c: 21300000
+    - 3a2541f77400c6e428b0f64834e1bcbd: 21300000
     - cab147b8231087f4fa73259d38207c45: 21300000
+    - d026839942a72a541901a57aae4857d5: 21300000
     - 2eac18ea6e05d504781722b33263880c: 21300000
     - 64b7435de3622c241a65d9c35da74f6d: 21300000
     - e316618ea30d6f247a7fa7350cc15cae: 21300000
   m_MasterAtlas: {fileID: 0}
   m_PackedSprites:
   - {fileID: 21300000, guid: 34fccb406a6955341b2813638f7477f3, type: 3}
+  - {fileID: 21300000, guid: ff3262c286b9f164fad29183c2e0642f, type: 3}
   - {fileID: 21300000, guid: 3b7e2c833bac19849b9b3859ab0704dc, type: 3}
+  - {fileID: 21300000, guid: 407ace9358c315e4289fe0595fa88454, type: 3}
+  - {fileID: 21300000, guid: c2c36784246bec74dbffbc2ab8cfaa06, type: 3}
   - {fileID: 21300000, guid: 4696ab2759247a74eb30062185f0332c, type: 3}
+  - {fileID: 21300000, guid: 3a2541f77400c6e428b0f64834e1bcbd, type: 3}
   - {fileID: 21300000, guid: cab147b8231087f4fa73259d38207c45, type: 3}
+  - {fileID: 21300000, guid: d026839942a72a541901a57aae4857d5, type: 3}
   - {fileID: 21300000, guid: 2eac18ea6e05d504781722b33263880c, type: 3}
   - {fileID: 21300000, guid: 64b7435de3622c241a65d9c35da74f6d, type: 3}
   - {fileID: 21300000, guid: e316618ea30d6f247a7fa7350cc15cae, type: 3}
   m_PackedSpriteNamesToIndex:
   - WaveFrame
+  - PauseIcon
   - healthbar_frame
+  - PauseMenuButton
+  - Bazookaicon
   - healthbar_fill
+  - SpeedPickup
   - HealthBarBackground
+  - HealthPickUp
   - EnemiesLeftbackground
   - WaveBackground
   - EnemiesLeftFrame

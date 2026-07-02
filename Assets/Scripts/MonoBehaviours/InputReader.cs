@@ -1,18 +1,21 @@
+using System;
 using OptimizationGame.Core;
 using OptimizationGame.Interfaces;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace OptimizationGame.MonoBehaviours
 {
     // Lee el Input System nuevo y reenvía datos/acciones a GameManager.
+    // Clase pura (NO MonoBehaviour): la crea/posee GameManager (composition root).
     // No tiene Update propio: la lectura recurrente corre por ITickable.Tick(dt),
     // registrado en CustomUpdateManager (único frame callback de gameplay).
-    // OnEnable/OnDisable solo habilitan/deshabilitan/dispose de las InputActions.
-    public class InputReader : MonoBehaviour, ITickable
+    // Initialize() reemplaza al antiguo OnEnable; Dispose() al antiguo OnDisable.
+    public class InputReader : ITickable, IDisposable
     {
-        [SerializeField] private GameManager _gameManager;
-        [SerializeField] private Camera _mainCamera;
+        private readonly GameManager _gameManager;
+        private readonly Camera _mainCamera;
 
         private InputActionMap _gameplayActions;
         private InputAction _moveAction;
@@ -20,14 +23,25 @@ namespace OptimizationGame.MonoBehaviours
         private InputAction _fireAction;
         private InputAction _pauseAction;
 
-        private void OnEnable()
+        public InputReader(GameManager gameManager, Camera mainCamera)
+        {
+            _gameManager = gameManager;
+            _mainCamera = mainCamera;
+        }
+
+        // Reemplaza al antiguo OnEnable(): lo llama GameManager en su inicialización.
+        public void Initialize()
         {
             CreateInputActions();
             _gameplayActions.Enable();
         }
 
-        private void OnDisable()
+        // Reemplaza al antiguo OnDisable(): lo llama GameManager en OnDestroy.
+        public void Dispose()
         {
+            if (_gameplayActions == null)
+                return;
+
             _gameplayActions.Disable();
             _gameplayActions.Dispose();
             _gameplayActions = null;
@@ -53,7 +67,7 @@ namespace OptimizationGame.MonoBehaviours
             _fireAction = _gameplayActions.AddAction("Fire", InputActionType.Button);
             _fireAction.AddBinding("<Mouse>/leftButton");
 
-            // Pausa: Escape (preparado para futuro)
+            // Pausa: Escape (preparado para futuro, aún no funcional)
             _pauseAction = _gameplayActions.AddAction("Pause", InputActionType.Button);
             _pauseAction.AddBinding("<Keyboard>/escape");
         }
@@ -62,14 +76,27 @@ namespace OptimizationGame.MonoBehaviours
         // deltaTime no se usa (la lectura de input no depende del dt).
         public void Tick(float deltaTime)
         {
-            // Guard defensivo: si OnEnable aún no creó las acciones (o ya se hizo
-            // dispose en OnDisable), no leer para evitar excepciones.
+            // Guard defensivo: si aún no se llamó Initialize (o ya se hizo Dispose),
+            // no leer para evitar excepciones.
             if (_gameplayActions == null)
                 return;
+
+            // Pausa primero: alterna pausa/reanudar con Escape. InputReader sigue
+            // tickeando durante la pausa (registrado como always-tickable), por eso
+            // este chequeo funciona aun con el gameplay detenido.
+            ReadPauseInput();
 
             ReadMovementInput();
             ReadLookInput();
             ReadFireInput();
+        }
+
+        private void ReadPauseInput()
+        {
+            if (_pauseAction.WasPressedThisFrame())
+            {
+                _gameManager.TogglePause();
+            }
         }
 
         private void ReadMovementInput()
@@ -95,10 +122,16 @@ namespace OptimizationGame.MonoBehaviours
 
         private void ReadFireInput()
         {
-            if (_fireAction.WasPressedThisFrame())
-            {
-                _gameManager.FireProjectile();
-            }
+            if (!_fireAction.WasPressedThisFrame())
+                return;
+
+            // El click izquierdo se usa tanto para disparar como para presionar botones de UI
+            // (PauseIconButton, Pause/End). Si el puntero está sobre un elemento del EventSystem,
+            // el click es una interacción de UI: no debe llegar a FireProjectile().
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                return;
+
+            _gameManager.FireProjectile();
         }
     }
 }

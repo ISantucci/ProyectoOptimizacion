@@ -13,5 +13,9 @@ namespace OptimizationGame.Data
         public float StoppingDistance = 1.2f;
         public bool IsBoss = false;
         public Color DebugColor = Color.red;
+
+        // Referencia opcional. Si queda null, el enemigo no dropea (comportamiento previo intacto).
+        [SerializeField] private DropTableData dropTable;
+        public DropTableData DropTable => dropTable;
     }
 }
