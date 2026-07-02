@@ -20,9 +20,9 @@ MonoBehaviour:
     - WaveName: Wave 1
       Enemies:
       - EnemyType: {fileID: 11400000, guid: 88bb5e971ec65e04dafd9cb9299c00e0, type: 2}
-        Count: 500
+        Count: 50
       SpawnDelay: 0.1
-      MaxEnemiesAlive: 500
+      MaxEnemiesAlive: 50
       DelayBeforeNextWave: 10
     - WaveName: Wave 2
       Enemies:
