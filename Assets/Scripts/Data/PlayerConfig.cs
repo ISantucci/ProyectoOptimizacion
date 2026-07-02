@@ -2,7 +2,7 @@ namespace OptimizationGame.Data
 {
     public class PlayerConfig
     {
-        public float MaxHealth = 100f;
+        public float MaxHealth = 10000000f;
         public float MoveSpeed = 15f;
         public float ProjectileSpeed = 50f;
         public float ProjectileDamage = 10f;

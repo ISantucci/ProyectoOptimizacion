@@ -1,0 +1,79 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!687078895 &4343727234628468602
+SpriteAtlas:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Sprite Atlas
+  m_EditorData:
+    serializedVersion: 2
+    textureSettings:
+      serializedVersion: 2
+      anisoLevel: 1
+      compressionQuality: 50
+      maxTextureSize: 2048
+      textureCompression: 0
+      filterMode: 1
+      generateMipMaps: 0
+      readable: 0
+      crunchedCompression: 0
+      sRGB: 1
+    platformSettings:
+    - serializedVersion: 4
+      m_BuildTarget: DefaultTexturePlatform
+      m_MaxTextureSize: 2048
+      m_ResizeAlgorithm: 0
+      m_TextureFormat: -1
+      m_TextureCompression: 0
+      m_CompressionQuality: 50
+      m_CrunchedCompression: 0
+      m_AllowsAlphaSplitting: 0
+      m_Overridden: 0
+      m_IgnorePlatformSupport: 0
+      m_AndroidETC2FallbackOverride: 0
+      m_ForceMaximumCompressionQuality_BC6H_BC7: 0
+    packingSettings:
+      serializedVersion: 2
+      padding: 4
+      blockOffset: 1
+      allowAlphaSplitting: 0
+      enableRotation: 0
+      enableTightPacking: 0
+      enableAlphaDilation: 0
+    secondaryTextureSettings: {}
+    variantMultiplier: 1
+    packables:
+    - {fileID: 102900000, guid: ff76afe873cb37a41b7dfd3bf8cfd3b1, type: 3}
+    bindAsDefault: 1
+    isAtlasV2: 0
+    cachedData: {fileID: 0}
+    packedSpriteRenderDataKeys:
+    - 34fccb406a6955341b2813638f7477f3: 21300000
+    - 3b7e2c833bac19849b9b3859ab0704dc: 21300000
+    - 4696ab2759247a74eb30062185f0332c: 21300000
+    - cab147b8231087f4fa73259d38207c45: 21300000
+    - 2eac18ea6e05d504781722b33263880c: 21300000
+    - 64b7435de3622c241a65d9c35da74f6d: 21300000
+    - e316618ea30d6f247a7fa7350cc15cae: 21300000
+  m_MasterAtlas: {fileID: 0}
+  m_PackedSprites:
+  - {fileID: 21300000, guid: 34fccb406a6955341b2813638f7477f3, type: 3}
+  - {fileID: 21300000, guid: 3b7e2c833bac19849b9b3859ab0704dc, type: 3}
+  - {fileID: 21300000, guid: 4696ab2759247a74eb30062185f0332c, type: 3}
+  - {fileID: 21300000, guid: cab147b8231087f4fa73259d38207c45, type: 3}
+  - {fileID: 21300000, guid: 2eac18ea6e05d504781722b33263880c, type: 3}
+  - {fileID: 21300000, guid: 64b7435de3622c241a65d9c35da74f6d, type: 3}
+  - {fileID: 21300000, guid: e316618ea30d6f247a7fa7350cc15cae, type: 3}
+  m_PackedSpriteNamesToIndex:
+  - WaveFrame
+  - healthbar_frame
+  - healthbar_fill
+  - HealthBarBackground
+  - EnemiesLeftbackground
+  - WaveBackground
+  - EnemiesLeftFrame
+  m_RenderDataMap: {}
+  m_Tag: Sprite Atlas
+  m_IsVariant: 0
