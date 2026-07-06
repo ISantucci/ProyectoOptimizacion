@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using OptimizationGame.Data;
+using OptimizationGame.Events;
 using OptimizationGame.Models;
+using OptimizationGame.MonoBehaviours;
 using OptimizationGame.Systems;
 using UnityEngine;
 
@@ -30,6 +32,11 @@ namespace OptimizationGame.Core
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
         [SerializeField] private Camera _mainCamera;
         [SerializeField] private PoolConfig _poolConfig;
+
+        // Reproductor de audio (composition root). Referencia concreta porque el
+        // Inspector no serializa interfaces; se pasa como IAudioPlayer al observer.
+        // Opcional: si queda null, no se crea el observer y el juego corre sin audio.
+        [SerializeField] private AudioManager _audioManager;
 
         // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
         // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
@@ -80,6 +87,8 @@ namespace OptimizationGame.Core
         public event Action<bool> PauseChanged; // true = pausado, false = reanudado
         public event Action Victory;
         public event Action Defeat;
+        // Disparo REAL (proyectil ya spawneado), no el click. Lo escucha el audio.
+        public event Action<WeaponFiredEvent> WeaponFired;
         public event Action GameStarted;        // se dispara al iniciar una run (Start o Restart)
         public event Action ReturnedToMenu;     // se dispara al volver al Main Menu (Etapa B: UIManager)
 
@@ -101,6 +110,10 @@ namespace OptimizationGame.Core
         // Nombre de arma actual (fuente: WeaponData.DisplayName, fallback PlayerConfig.WeaponName).
         private string _weaponName;
 
+        // Observer de audio (clase pura). Vive lo que vive el GameManager: se crea en
+        // Awake y se libera en OnDestroy. Traduce eventos de flujo -> SoundId.
+        private GameplayAudioObserver _gameplayAudioObserver;
+
         private void Awake()
         {
             // Spawn como fuente de verdad: capturar ANTES de InitializeSystems, que lo usa
@@ -116,6 +129,14 @@ namespace OptimizationGame.Core
             CreateOrchestrator();
             InitializeInput();
             RegisterGameplaySystems();
+
+            // Audio event-driven: el observer se suscribe a eventos de flujo del
+            // GameManager y los traduce a SoundId. Opt-in: sin AudioManager asignado,
+            // no se crea (el juego funciona igual, sin audio).
+            if (_audioManager != null)
+                _gameplayAudioObserver = new GameplayAudioObserver(this, _audioManager);
+            else
+                Debug.LogWarning("GameManager: _audioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
 
             if (_startWithMenu)
             {
@@ -141,6 +162,7 @@ namespace OptimizationGame.Core
         private void OnDestroy()
         {
             _inputReader?.Dispose();
+            _gameplayAudioObserver?.Dispose();
         }
 
         private void InitializeSystems()
@@ -514,6 +536,11 @@ namespace OptimizationGame.Core
             {
                 view.SetRotation(Quaternion.LookRotation(_playerSystem.GetFireDirection()));
                 _projectileViews[projectile] = view;
+
+                // Disparo validado y proyectil realmente spawneado: recién acá se emite
+                // el evento. El arma equipada define el sonido (FireSoundId); el audio lo
+                // resuelve. No suena si el disparo se abortó arriba.
+                WeaponFired?.Invoke(new WeaponFiredEvent(_playerSystem.ActiveFireSoundId));
             }
             else
             {

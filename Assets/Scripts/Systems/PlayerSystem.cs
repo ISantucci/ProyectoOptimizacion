@@ -37,6 +37,8 @@ namespace OptimizationGame.Systems
         // GameManager lo consulta para registrar lazy el prefab en el ObjectPool. PlayerSystem
         // NO conoce el ObjectPool: solo expone el dato.
         public GameObject ActiveProjectilePrefab => _activeWeapon != null ? _activeWeapon.ProjectilePrefab : null;
+        // Sonido de disparo del arma activa. None si no hay arma o no está configurado.
+        public SoundId ActiveFireSoundId => _activeWeapon != null ? _activeWeapon.FireSoundId : SoundId.None;
 
         // --- Estado del speed boost expuesto para la UI (solo lectura) ---
         public bool HasActiveSpeedBoost => _speedBoostTimer > 0f;

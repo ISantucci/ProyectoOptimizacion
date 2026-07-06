@@ -25,5 +25,10 @@ namespace OptimizationGame.Data
         public GameObject ProjectilePrefab => projectilePrefab;
         public float AreaRadius => areaRadius;
         public bool HasAreaDamage => areaRadius > 0f;
+
+        // Intención sonora del disparo de esta arma. Se resuelve a un clip en la
+        // AudioLibrary; el arma NO conoce AudioClip ni AudioSource. None = sin sonido.
+        [SerializeField] private SoundId _fireSoundId = SoundId.None;
+        public SoundId FireSoundId => _fireSoundId;
     }
 }
