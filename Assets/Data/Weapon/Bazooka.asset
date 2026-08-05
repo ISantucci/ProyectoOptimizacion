@@ -22,3 +22,4 @@ MonoBehaviour:
   DebugColor: {r: 1, g: 1, b: 1, a: 1}
   projectilePrefab: {fileID: 0}
   areaRadius: 10
+  _fireSoundId: 5

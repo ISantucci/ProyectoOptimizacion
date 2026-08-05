@@ -12,4 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f9d7dea2dba33674e9a26e63fa0239e6, type: 3}
   m_Name: AudioLibrary
   m_EditorClassIdentifier: Assembly-CSharp::OptimizationGame.Data.AudioLibrary
-  _cues: []
+  _cues:
+  - _id: 5
+    _clips:
+    - {fileID: 8300000, guid: 3a95dc52e35af5142b3d3b5e8ec4d1bf, type: 3}
+    _volume: 0.1
+    _pitch: 1
+    _randomPitchRange: 0.05
+    _category: 1

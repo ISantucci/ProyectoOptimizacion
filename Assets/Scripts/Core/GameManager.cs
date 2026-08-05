@@ -27,6 +27,10 @@ namespace OptimizationGame.Core
         // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
         // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
         [SerializeField] private GameObject _pickupPrefab;
+        // Prefab visual de la marca de spawn (telegraph). Debe tener SpriteRenderer.
+        // Opcional: si queda sin asignar, no se registra la key y el aviso visual se omite
+        // (el enemigo igual spawnea; solo falta la marca), con warning en el orquestador.
+        [SerializeField] private GameObject _spawnMarkerPrefab;
         [SerializeField] private CustomUpdateManager _updateManager;
         // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
@@ -58,6 +62,7 @@ namespace OptimizationGame.Core
         private RoomSystem _roomSystem;
         private CombatSystem _combatSystem;
         private PickupSystem _pickupSystem;
+        private SpawnTelegraphSystem _spawnTelegraphSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
 
@@ -68,6 +73,7 @@ namespace OptimizationGame.Core
         private Dictionary<EnemyModel, MonoBehaviours.EntityView> _enemyViews = new();
         private Dictionary<ProjectileModel, MonoBehaviours.EntityView> _projectileViews = new();
         private Dictionary<PickupModel, MonoBehaviours.EntityView> _pickupViews = new();
+        private Dictionary<SpawnMarkerModel, MonoBehaviours.EntityView> _spawnMarkerViews = new();
 
         // Bloqueo de gameplay tras Victory/Defeat. Lo activa el orquestador vía EndGameplay().
         // GameManager es dueño de la pausa del loop y del bloqueo del disparo.
@@ -134,7 +140,10 @@ namespace OptimizationGame.Core
             // GameManager y los traduce a SoundId. Opt-in: sin AudioManager asignado,
             // no se crea (el juego funciona igual, sin audio).
             if (_audioManager != null)
+            {
                 _gameplayAudioObserver = new GameplayAudioObserver(this, _audioManager);
+                Debug.Log("[TEMP-AUDIO] Observer creado y suscrito a WeaponFired");
+            }
             else
                 Debug.LogWarning("GameManager: _audioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
 
@@ -192,6 +201,7 @@ namespace OptimizationGame.Core
             _roomSystem = new RoomSystem(_gameFlowConfig);
             _combatSystem = new CombatSystem();
             _pickupSystem = new PickupSystem(() => _playerModel.Position);
+            _spawnTelegraphSystem = new SpawnTelegraphSystem();
         }
 
         private void InitializePools()
@@ -207,6 +217,13 @@ namespace OptimizationGame.Core
             else
                 Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
 
+            // SpawnMarker (telegraph): opcional, mismo criterio que Pickup. Reusa VfxPrewarm
+            // del PoolConfig (campo que estaba reservado y sin uso hasta ahora).
+            if (_spawnMarkerPrefab != null)
+                _objectPool.RegisterPrefab("SpawnMarker", _spawnMarkerPrefab);
+            else
+                Debug.LogWarning("GameManager: _spawnMarkerPrefab sin asignar. El telegraph de spawn no se mostrará (los enemigos siguen spawneando).");
+
             if (_poolConfig == null)
             {
                 Debug.LogError("GameManager missing PoolConfig reference. Pools will not be prewarmed (they will still grow on demand).");
@@ -217,6 +234,8 @@ namespace OptimizationGame.Core
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
             if (_pickupPrefab != null)
                 _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
+            if (_spawnMarkerPrefab != null)
+                _objectPool.Prewarm("SpawnMarker", _poolConfig.VfxPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -237,6 +256,8 @@ namespace OptimizationGame.Core
                 _projectileViews,
                 _roomSpawnGroups,
                 _playerTransform,
+                _spawnTelegraphSystem,
+                _spawnMarkerViews,
                 _pickupSystem,
                 _pickupViews,
                 (multiplier, duration, displayName, icon) => _playerSystem.ApplySpeedBoost(multiplier, duration, displayName, icon),
@@ -283,6 +304,9 @@ namespace OptimizationGame.Core
             _updateManager.Register(_projectileSystem);
             _updateManager.Register(_waveSystem);
             _updateManager.Register(_pickupSystem);
+            // Telegraph antes del orquestador: tickea el countdown/titileo de las marcas y
+            // el orquestador consume ReadyMarkers en el mismo frame (igual que PickupSystem).
+            _updateManager.Register(_spawnTelegraphSystem);
             _updateManager.Register(_orchestrator);
         }
 
@@ -296,6 +320,7 @@ namespace OptimizationGame.Core
             _updateManager.Unregister(_projectileSystem);
             _updateManager.Unregister(_waveSystem);
             _updateManager.Unregister(_pickupSystem);
+            _updateManager.Unregister(_spawnTelegraphSystem);
             _updateManager.Unregister(_orchestrator);
         }
 
@@ -316,6 +341,11 @@ namespace OptimizationGame.Core
             foreach (var kvp in _pickupViews)
                 _objectPool.Despawn("Pickup", kvp.Value);
             _pickupViews.Clear();
+
+            // Marcas de spawn en vuelo al terminar/reiniciar la run: devolver sus views al pool.
+            foreach (var kvp in _spawnMarkerViews)
+                _objectPool.Despawn("SpawnMarker", kvp.Value);
+            _spawnMarkerViews.Clear();
         }
 
         // Reconstruye los sistemas puros de gameplay desde cero para una run nueva.
@@ -499,13 +529,20 @@ namespace OptimizationGame.Core
 
         public void FireProjectile()
         {
+            Debug.Log($"[TEMP-AUDIO] FireProjectile() llamado. ended={_gameplayEnded} paused={_updateManager.IsPaused} state={_gameState}");
             // Bloqueo tras fin de juego o durante pausa/menú: no se crea ningún proyectil
             // aunque InputReader siga enviando el click (sigue tickeando siempre).
             if (_gameplayEnded || _updateManager.IsPaused)
+            {
+                Debug.Log("[TEMP-AUDIO] FireProjectile abortado: gameplayEnded o pausado");
                 return;
+            }
 
             if (!_playerSystem.CanFire())
+            {
+                Debug.Log("[TEMP-AUDIO] FireProjectile abortado: CanFire()==false (cooldown)");
                 return;
+            }
 
             _playerSystem.Fire();
             var projectile = _playerSystem.CreateProjectile(_projectileSystem.Projectiles.Count);
@@ -540,6 +577,7 @@ namespace OptimizationGame.Core
                 // Disparo validado y proyectil realmente spawneado: recién acá se emite
                 // el evento. El arma equipada define el sonido (FireSoundId); el audio lo
                 // resuelve. No suena si el disparo se abortó arriba.
+                Debug.Log($"[TEMP-AUDIO] Emitiendo WeaponFired. soundId={_playerSystem.ActiveFireSoundId} subs={(WeaponFired!=null)}");
                 WeaponFired?.Invoke(new WeaponFiredEvent(_playerSystem.ActiveFireSoundId));
             }
             else

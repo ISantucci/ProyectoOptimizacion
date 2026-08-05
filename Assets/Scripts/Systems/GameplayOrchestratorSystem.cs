@@ -47,6 +47,15 @@ namespace OptimizationGame.Systems
         private readonly List<RoomSpawnGroup> _roomSpawnGroups;
         private readonly Transform _playerTransform;
 
+        // --- Telegraph de spawn: la marca en el piso que avisa dónde spawnea el enemigo. ---
+        // Referencias compartidas creadas por GameManager (mismo patrón que pickups/enemigos).
+        private readonly SpawnTelegraphSystem _spawnTelegraphSystem;
+        private readonly Dictionary<SpawnMarkerModel, EntityView> _spawnMarkerViews;
+        private const string SpawnMarkerPoolKey = "SpawnMarker";
+        private bool _loggedMissingSpawnMarkerPool;
+        // Pequeño offset en Y para apoyar la marca sobre el piso sin z-fighting.
+        private const float SpawnMarkerFloorOffsetY = 0.05f;
+
         // --- Pickups (Bloque C). Referencias compartidas creadas por GameManager. ---
         private readonly PickupSystem _pickupSystem;
         private readonly Dictionary<PickupModel, EntityView> _pickupViews;
@@ -110,6 +119,8 @@ namespace OptimizationGame.Systems
             Dictionary<ProjectileModel, EntityView> projectileViews,
             List<RoomSpawnGroup> roomSpawnGroups,
             Transform playerTransform,
+            SpawnTelegraphSystem spawnTelegraphSystem,
+            Dictionary<SpawnMarkerModel, EntityView> spawnMarkerViews,
             PickupSystem pickupSystem,
             Dictionary<PickupModel, EntityView> pickupViews,
             Action<float, float, string, Sprite> applySpeedBoost,
@@ -134,6 +145,8 @@ namespace OptimizationGame.Systems
             _projectileViews = projectileViews;
             _roomSpawnGroups = roomSpawnGroups;
             _playerTransform = playerTransform;
+            _spawnTelegraphSystem = spawnTelegraphSystem;
+            _spawnMarkerViews = spawnMarkerViews;
             _pickupSystem = pickupSystem;
             _pickupViews = pickupViews;
             _applySpeedBoost = applySpeedBoost;
@@ -156,6 +169,11 @@ namespace OptimizationGame.Systems
                 return;
 
             HandleSpawning();
+            // Telegraph: titileo de las marcas activas y resolución de las que ya vencieron
+            // (spawn del enemigo en su posición). SpawnTelegraphSystem ya tickeó su countdown
+            // antes que el orquestador, así que ReadyMarkers está al día en este frame.
+            UpdateSpawnMarkerVisuals();
+            ResolveReadySpawnMarkers();
             HandleCombat(deltaTime);
 
             // Procesa pickups recogidos por PickupSystem (que ya tickeó antes en el frame)
@@ -216,7 +234,9 @@ namespace OptimizationGame.Systems
                     _waveSystem.IsFinalWave);
             }
 
-            int enemiesLeft = _waveSystem.PendingToSpawnCount + _enemySystem.AliveCount;
+            // Suma las marcas en vuelo: un enemigo ya sacado de la cola pero todavía en
+            // telegraph no está "vivo" ni "pendiente", así que sin esto el HUD parpadearía.
+            int enemiesLeft = _waveSystem.PendingToSpawnCount + _enemySystem.AliveCount + _spawnTelegraphSystem.ActiveCount;
             if (enemiesLeft != _lastEnemiesLeft)
             {
                 _lastEnemiesLeft = enemiesLeft;
@@ -237,10 +257,84 @@ namespace OptimizationGame.Systems
                 return;
             }
 
-            if (_waveSystem.TryGetNextEnemyType(_enemySystem.AliveCount, out var enemyType))
+            // El pacing cuenta las marcas en vuelo como enemigos ya "reservados": una marca
+            // se convertirá en enemigo en 1s, así que suma al conteo de vivos para respetar
+            // MaxEnemiesAlive y no llenar la sala de marcas.
+            int reservedCount = _enemySystem.AliveCount + _spawnTelegraphSystem.ActiveCount;
+            if (_waveSystem.TryGetNextEnemyType(reservedCount, out var enemyType))
             {
-                SpawnEnemy(spawnGroup, enemyType);
+                SpawnMarker(spawnGroup, enemyType);
             }
+        }
+
+        // Elige un spawn point y coloca la MARCA (telegraph) en el piso. El enemigo NO
+        // aparece todavía: lo hace ResolveReadySpawnMarkers cuando el countdown termina.
+        private void SpawnMarker(RoomSpawnGroup spawnGroup, EnemyTypeData enemyType)
+        {
+            int index = UnityEngine.Random.Range(0, spawnGroup.SpawnPoints.Count);
+            var spawnPoint = spawnGroup.SpawnPoints[index];
+
+            Vector3 spawnPosition = spawnPoint.position;
+            spawnPosition.y = _playerModel.Position.y;
+
+            var marker = _spawnTelegraphSystem.CreateMarker(enemyType, spawnPosition);
+
+            // Marca visible sobre el piso (con un pequeño offset para evitar z-fighting).
+            Vector3 markerViewPosition = spawnPosition;
+            markerViewPosition.y += SpawnMarkerFloorOffsetY;
+
+            var view = _objectPool.Spawn(SpawnMarkerPoolKey, markerViewPosition);
+            if (view != null)
+            {
+                view.SetVisible(true);
+                _spawnMarkerViews[marker] = view;
+            }
+            else if (!_loggedMissingSpawnMarkerPool)
+            {
+                // Pool no registrado (sin prefab de marca): degradá sin crashear. El enemigo
+                // igual va a spawnear cuando venza el countdown; solo falta el aviso visual.
+                Debug.LogWarning("GameplayOrchestratorSystem: pool 'SpawnMarker' sin prefab. El telegraph no se mostrará (el spawn del enemigo sigue funcionando).");
+                _loggedMissingSpawnMarkerPool = true;
+            }
+        }
+
+        // Aplica el titileo (que acelera) a las marcas todavía activas, leyendo
+        // ShouldBeVisible del modelo. Mismo patrón que UpdatePickupVisuals.
+        private void UpdateSpawnMarkerVisuals()
+        {
+            var active = _spawnTelegraphSystem.ActiveMarkers;
+            for (int i = 0; i < active.Count; i++)
+            {
+                var marker = active[i];
+                if (_spawnMarkerViews.TryGetValue(marker, out var view))
+                    view.SetVisible(marker.ShouldBeVisible);
+            }
+        }
+
+        // Para cada marca cuyo countdown terminó este frame: devuelve su view al pool y
+        // spawnea el enemigo en la posición marcada. Luego limpia la lista en el sistema.
+        private void ResolveReadySpawnMarkers()
+        {
+            var ready = _spawnTelegraphSystem.ReadyMarkers;
+            if (ready.Count == 0)
+                return;
+
+            for (int i = 0; i < ready.Count; i++)
+            {
+                var marker = ready[i];
+
+                if (_spawnMarkerViews.TryGetValue(marker, out var view))
+                {
+                    // Restaurar visible antes de devolver al pool (el titileo pudo dejarla oculta).
+                    view.SetVisible(true);
+                    _objectPool.Despawn(SpawnMarkerPoolKey, view);
+                    _spawnMarkerViews.Remove(marker);
+                }
+
+                SpawnEnemyAt(marker.Position, marker.EnemyType);
+            }
+
+            _spawnTelegraphSystem.ClearReadyMarkers();
         }
 
         private RoomSpawnGroup GetSpawnGroupForCurrentRoom()
@@ -259,12 +353,9 @@ namespace OptimizationGame.Systems
             return null;
         }
 
-        private void SpawnEnemy(RoomSpawnGroup spawnGroup, EnemyTypeData enemyType)
+        // Spawn REAL del enemigo en una posición ya decidida (la de la marca vencida).
+        private void SpawnEnemyAt(Vector3 spawnPosition, EnemyTypeData enemyType)
         {
-            int index = UnityEngine.Random.Range(0, spawnGroup.SpawnPoints.Count);
-            var spawnPoint = spawnGroup.SpawnPoints[index];
-
-            Vector3 spawnPosition = spawnPoint.position;
             spawnPosition.y = _playerModel.Position.y;
 
             var enemyModel = _enemySystem.CreateEnemy(enemyType);

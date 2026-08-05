@@ -58,6 +58,11 @@ namespace OptimizationGame.MonoBehaviours
         /// </summary>
         public void Play(SoundId id)
         {
+            var listeners = FindObjectsOfType<AudioListener>();
+            int activeListeners = 0;
+            foreach (var l in listeners)
+                if (l.enabled && l.gameObject.activeInHierarchy) activeListeners++;
+            Debug.Log($"[TEMP-AUDIO] Play() id={id} | AudioListener.volume={AudioListener.volume} pause={AudioListener.pause} listenersEnEscena={listeners.Length} activos={activeListeners}");
             if (id == SoundId.None)
                 return;
 
@@ -82,6 +87,8 @@ namespace OptimizationGame.MonoBehaviours
 
             AudioSource voice = GetVoice();
             voice.pitch = ResolvePitch(cue);
+            string mixerName = voice.outputAudioMixerGroup != null ? voice.outputAudioMixerGroup.name : "null";
+            Debug.Log($"[TEMP-AUDIO] PlayOneShot clip='{clip.name}' vol={cue.Volume} pitch={voice.pitch} mute={voice.mute} enabled={voice.enabled} mixer={mixerName}");
             voice.PlayOneShot(clip, cue.Volume);
         }
 
