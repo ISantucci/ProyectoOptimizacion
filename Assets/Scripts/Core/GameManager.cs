@@ -144,7 +144,6 @@ namespace OptimizationGame.Core
             if (_audioManager != null)
             {
                 _gameplayAudioObserver = new GameplayAudioObserver(this, _audioManager);
-                Debug.Log("[TEMP-AUDIO] Observer creado y suscrito a WeaponFired");
             }
             else
                 Debug.LogWarning("GameManager: _sceneRefs.AudioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
@@ -582,20 +581,13 @@ namespace OptimizationGame.Core
 
         public void FireProjectile()
         {
-            Debug.Log($"[TEMP-AUDIO] FireProjectile() llamado. ended={_gameplayEnded} paused={_updateManager.IsPaused} state={_gameState}");
             // Bloqueo tras fin de juego o durante pausa/menú: no se crea ningún proyectil
             // aunque InputReader siga enviando el click (sigue tickeando siempre).
             if (_gameplayEnded || _updateManager.IsPaused)
-            {
-                Debug.Log("[TEMP-AUDIO] FireProjectile abortado: gameplayEnded o pausado");
                 return;
-            }
 
             if (!_playerSystem.CanFire())
-            {
-                Debug.Log("[TEMP-AUDIO] FireProjectile abortado: CanFire()==false (cooldown)");
                 return;
-            }
 
             _playerSystem.Fire();
             var projectile = _playerSystem.CreateProjectile(_projectileSystem.Projectiles.Count);
@@ -642,7 +634,6 @@ namespace OptimizationGame.Core
                 // Disparo validado y proyectil realmente spawneado: recién acá se emite
                 // el evento. El arma equipada define el sonido (FireSoundId); el audio lo
                 // resuelve. No suena si el disparo se abortó arriba.
-                Debug.Log($"[TEMP-AUDIO] Emitiendo WeaponFired. soundId={_playerSystem.ActiveFireSoundId} subs={(WeaponFired!=null)}");
                 WeaponFired?.Invoke(new WeaponFiredEvent(_playerSystem.ActiveFireSoundId));
             }
             else
