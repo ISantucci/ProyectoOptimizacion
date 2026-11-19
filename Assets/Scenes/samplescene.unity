@@ -669,7 +669,9 @@ MonoBehaviour:
     SpawnMarkerPrefab: {fileID: 7412300000000000001, guid: 8482035d28044ad9bd17122745ce0b44, type: 3}
   _updateManager: {fileID: 1294942944}
   _mainCamera: {fileID: 426270310}
-  _poolConfig: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
+  _configs:
+    Pool: {fileID: 11400000, guid: 1f382dbf58738d740aa5bba34eb19c7f, type: 2}
+    Telemetry: {fileID: 11400000, guid: c26b42665e4a41578a311901a479ac99, type: 2}
   _baseWeapon: {fileID: 11400000, guid: 522da670fba038543a80967d8e97e483, type: 2}
   _gameFlowConfig: {fileID: 11400000, guid: 71835a329537b264781b20af61aaa390, type: 2}
   _roomSpawnGroups:

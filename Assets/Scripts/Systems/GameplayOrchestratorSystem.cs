@@ -94,6 +94,11 @@ namespace OptimizationGame.Systems
         private readonly DropSystem _dropSystem = new DropSystem();
 
         // --- Salidas hacia GameManager (sin acoplar al tipo MonoBehaviour) ---
+        // Eventos de gameplay para observers (telemetría). Sin suscriptores, no cuestan nada.
+        public event Action<string> EnemyKilled;      // (enemyId)
+        public event Action<string> PlayerDamaged;    // (enemyId que pegó)
+        public event Action<PickupKind> PickupCollected;
+
         private readonly Action<float, float> _raiseHealthChanged;
         private readonly Action<string, int, int, bool> _raiseWaveChanged;
         private readonly Action<int> _raiseEnemiesLeftChanged;
@@ -447,6 +452,7 @@ namespace OptimizationGame.Systems
                     _combatSystem.CheckPlayerEnemyCollision(_playerModel.Position, enemy.Position))
                 {
                     _combatSystem.ApplyEnemyDamageToPlayer(enemy, _playerModel);
+                    PlayerDamaged?.Invoke(enemy.EnemyId);
                     enemy.RegisterAttack(EnemyDamageInterval);
                 }
             }
@@ -463,6 +469,8 @@ namespace OptimizationGame.Systems
                 var enemy = _enemySystem.Enemies[i];
                 if (enemy.IsAlive || !_enemyViews.ContainsKey(enemy))
                     continue;
+
+                EnemyKilled?.Invoke(enemy.EnemyId);
 
                 // Tirar drop al morir y, si sale, spawnear pickup visible en su posición.
                 if (_dropSystem.TryRollDrop(enemy.DropTable, out var pickupData))
@@ -632,6 +640,8 @@ namespace OptimizationGame.Systems
         {
             if (data == null)
                 return;
+
+            PickupCollected?.Invoke(data.Kind);
 
             switch (data.Kind)
             {

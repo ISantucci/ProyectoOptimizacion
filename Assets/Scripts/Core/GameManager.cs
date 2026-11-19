@@ -5,6 +5,7 @@ using OptimizationGame.Events;
 using OptimizationGame.Models;
 using OptimizationGame.MonoBehaviours;
 using OptimizationGame.Systems;
+using OptimizationGame.Telemetry;
 using UnityEngine;
 
 namespace OptimizationGame.Core
@@ -30,7 +31,10 @@ namespace OptimizationGame.Core
         // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
         [SerializeField] private Camera _mainCamera;
-        [SerializeField] private PoolConfig _poolConfig;
+        // Configs de servicios en un solo campo serializado (respeta <=10): el pool y la
+        // telemetría (MET-001.1). Sin TelemetryConfig asignado, el juego corre sin medir.
+        [SerializeField] private ConfigReferences _configs = new();
+        private PoolConfig _poolConfig => _configs.Pool;
 
         // Reproductor de audio (composition root). Vive dentro de _sceneRefs para respetar
         // el límite <=10 campos serializados de GameManager. Referencia concreta porque el
@@ -110,6 +114,14 @@ namespace OptimizationGame.Core
         public event Action<string, int, int, bool> WaveChanged;  // (waveName, currentIndex, totalWaves, isFinalWave)
         public event Action<int> EnemiesLeftChanged;              // (enemiesLeft)
         public event Action<string> WeaponChanged;               // (weaponName)
+
+        // --- Eventos de gameplay para observers (telemetría) ---
+        public event Action<string> EnemyKilled;                  // (enemyId)
+        public event Action<string> PlayerDamagedBy;              // (enemyId)
+        public event Action<PickupKind> PickupCollected;          // (kind)
+
+        /// <summary>Sala actual de la run, para el contexto de la telemetría. Null fuera de juego.</summary>
+        public string CurrentRoomId => _roomSystem != null ? _roomSystem.CurrentRoomId : null;
         // Powerup temporal activo (Speed). (active, displayName, icon, remaining, duration)
         public event Action<bool, string, Sprite, float, float> PowerUpChanged;
         // Arma temporal activa (HUD separado del PowerUp). (active, displayName, icon, remaining, duration)
@@ -121,6 +133,8 @@ namespace OptimizationGame.Core
         // Observer de audio (clase pura). Vive lo que vive el GameManager: se crea en
         // Awake y se libera en OnDestroy. Traduce eventos de flujo -> SoundId.
         private GameplayAudioObserver _gameplayAudioObserver;
+        private TelemetrySystem _telemetry;
+        private GameplayTelemetryObserver _telemetryObserver;
 
         private void Awake()
         {
@@ -148,6 +162,8 @@ namespace OptimizationGame.Core
             else
                 Debug.LogWarning("GameManager: _sceneRefs.AudioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
 
+            InitializeTelemetry();
+
             if (_startWithMenu)
             {
                 // Arranca pausado en el menú: el loop no simula gameplay hasta
@@ -168,7 +184,29 @@ namespace OptimizationGame.Core
                 SetGameplaySceneActive(true);
                 StartGameplay();
                 _gameState = GameState.Playing;
+                _telemetryObserver?.BeginRunFromBoot();
             }
+        }
+
+        // Telemetría (RQ-001.5 / MET-001.1): sistema puro always-tick + observer de eventos.
+        // Opt-in por config: sin TelemetryConfig asignado, no se crea nada.
+        private void InitializeTelemetry()
+        {
+            if (_configs.Telemetry == null)
+                return;
+
+            _telemetry = new TelemetrySystem(_configs.Telemetry, () => _enemySystem != null ? _enemySystem.AliveCount : 0);
+            _updateManager.Register(_telemetry, pauseWithGameplay: false);
+            _telemetryObserver = new GameplayTelemetryObserver(this, _telemetry);
+            _telemetry.TrackSessionStart();
+        }
+
+        /// <summary>Consentimiento de telemetría del jugador (lo usa el panel de opciones, RQ-001.7).</summary>
+        public bool TelemetryConsent => _telemetry != null && _telemetry.Consent;
+
+        public void SetTelemetryConsent(bool granted)
+        {
+            _telemetry?.SetConsent(granted);
         }
 
         // InputReader es clase pura y posee InputActions no manejadas: liberarlas acá
@@ -177,6 +215,12 @@ namespace OptimizationGame.Core
         {
             _inputReader?.Dispose();
             _gameplayAudioObserver?.Dispose();
+            _telemetryObserver?.Dispose();
+            if (_telemetry != null)
+            {
+                _updateManager.Unregister(_telemetry);
+                _telemetry.Dispose();
+            }
         }
 
         private void InitializeSystems()
@@ -319,7 +363,17 @@ namespace OptimizationGame.Core
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
                 EndGameplay,
                 (pos, key) => _vfxSystem?.SpawnImpact(pos, key));
+
+            // El orquestador es nuevo en cada run: re-emitir sus eventos como eventos del
+            // GameManager, que es lo que escuchan los observers (telemetría).
+            _orchestrator.EnemyKilled += RaiseEnemyKilled;
+            _orchestrator.PlayerDamaged += RaisePlayerDamagedBy;
+            _orchestrator.PickupCollected += RaisePickupCollected;
         }
+
+        private void RaiseEnemyKilled(string enemyId) => EnemyKilled?.Invoke(enemyId);
+        private void RaisePlayerDamagedBy(string enemyId) => PlayerDamagedBy?.Invoke(enemyId);
+        private void RaisePickupCollected(PickupKind kind) => PickupCollected?.Invoke(kind);
 
         // InputReader vive TODA la escena: se crea y registra UNA sola vez (Awake).
         // Separado del registro de gameplay para no re-registrarlo en cada Restart.
@@ -659,6 +713,14 @@ namespace OptimizationGame.Core
         // Agrupa los prefabs pooled en un solo campo serializado. Cuenta como UN campo
         // expuesto de GameManager (respeta el límite <=10) pero expone N referencias en el
         // Inspector.
+        [Serializable]
+        private class ConfigReferences
+        {
+            public PoolConfig Pool;
+            // Opcional: sin TelemetryConfig, el juego no mide nada (RQ-001.5).
+            public TelemetryConfig Telemetry;
+        }
+
         [Serializable]
         private class PrefabReferences
         {
