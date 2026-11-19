@@ -42,6 +42,10 @@ namespace OptimizationGame.Systems
                 var view = new EntityView(instance);
                 var poolable = view as IPoolable;
                 poolable?.OnDespawned();
+                // Red de seguridad: garantiza que el objeto prewarmeado quede inactivo aunque
+                // OnDespawned falte/falle. Idempotente si OnDespawned ya lo apagó. Evita que los
+                // prefabs (VFX playOnAwake, etc.) queden vivos en el menú durante el prewarm.
+                instance.SetActive(false);
                 queue.Enqueue(view);
             }
         }

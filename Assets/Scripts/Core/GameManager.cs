@@ -22,25 +22,21 @@ namespace OptimizationGame.Core
     public class GameManager : MonoBehaviour
     {
         [SerializeField] private Transform _playerTransform;
-        [SerializeField] private GameObject _enemyPrefab;
-        [SerializeField] private GameObject _projectilePrefab;
-        // Bloque C: prefab visual del pickup (debe tener EntityView). Opcional: si queda
-        // sin asignar, los drops no se mostrarán pero el juego no crashea (warning).
-        [SerializeField] private GameObject _pickupPrefab;
-        // Prefab visual de la marca de spawn (telegraph). Debe tener SpriteRenderer.
-        // Opcional: si queda sin asignar, no se registra la key y el aviso visual se omite
-        // (el enemigo igual spawnea; solo falta la marca), con warning en el orquestador.
-        [SerializeField] private GameObject _spawnMarkerPrefab;
+        // Prefabs pooled agrupados en un solo campo serializado para no inflar el conteo
+        // de campos expuestos de GameManager (límite <=10). Un único [SerializeField]
+        // reemplaza a los prefabs sueltos y deja lugar para ImpactVfxPrefab sin sumar campos.
+        [SerializeField] private PrefabReferences _prefabs = new();
         [SerializeField] private CustomUpdateManager _updateManager;
         // Cámara usada por InputReader para el raycast de aim. InputReader ya no es
         // componente, así que la cámara se asigna acá por Inspector (no Camera.main en loop).
         [SerializeField] private Camera _mainCamera;
         [SerializeField] private PoolConfig _poolConfig;
 
-        // Reproductor de audio (composition root). Referencia concreta porque el
+        // Reproductor de audio (composition root). Vive dentro de _sceneRefs para respetar
+        // el límite <=10 campos serializados de GameManager. Referencia concreta porque el
         // Inspector no serializa interfaces; se pasa como IAudioPlayer al observer.
         // Opcional: si queda null, no se crea el observer y el juego corre sin audio.
-        [SerializeField] private AudioManager _audioManager;
+        private AudioManager _audioManager => _sceneRefs.AudioManager;
 
         // Arma base data-driven. Si queda sin asignar, el disparo cae a los valores
         // legacy de PlayerConfig (ver InitializeSystems / PlayerSystem).
@@ -55,6 +51,11 @@ namespace OptimizationGame.Core
         // un botón llame StartGameFromUI(). El botón se conecta a mano en Unity.
         [SerializeField] private bool _startWithMenu = false;
 
+        // Roots visuales de gameplay (player + escenario). Se apagan en Main Menu para
+        // no renderizar ni cargar GPU que no hace falta hasta tocar Play. Un solo campo
+        // serializado (contenedor) para respetar el límite <=10 campos de GameManager.
+        [SerializeField] private GameplaySceneReferences _sceneRefs = new();
+
         private PlayerSystem _playerSystem;
         private EnemySystem _enemySystem;
         private ProjectileSystem _projectileSystem;
@@ -63,6 +64,7 @@ namespace OptimizationGame.Core
         private CombatSystem _combatSystem;
         private PickupSystem _pickupSystem;
         private SpawnTelegraphSystem _spawnTelegraphSystem;
+        private VfxSystem _vfxSystem;
         private ObjectPool _objectPool;
         private GameplayOrchestratorSystem _orchestrator;
 
@@ -145,7 +147,7 @@ namespace OptimizationGame.Core
                 Debug.Log("[TEMP-AUDIO] Observer creado y suscrito a WeaponFired");
             }
             else
-                Debug.LogWarning("GameManager: _audioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
+                Debug.LogWarning("GameManager: _sceneRefs.AudioManager sin asignar en el Inspector. No habrá audio de flujo (pausa/victoria/derrota).");
 
             if (_startWithMenu)
             {
@@ -156,11 +158,15 @@ namespace OptimizationGame.Core
                 // InputReader nunca encuentre _playerModel/_playerSystem en null.
                 _gameState = GameState.Menu;
                 _updateManager.SetPaused(true);
+                // En Menu el player y el escenario no hacen falta: se apagan hasta Start.
+                SetGameplaySceneActive(false);
             }
             else
             {
                 // Boot directo a gameplay: reusa los sistemas recién creados (sin rebuild).
                 // GameStarted/HUD inicial los maneja UIManager.Start (corre después de Awake).
+                // Se asegura que los roots estén activos aunque en escena quedaran apagados.
+                SetGameplaySceneActive(true);
                 StartGameplay();
                 _gameState = GameState.Playing;
             }
@@ -202,27 +208,43 @@ namespace OptimizationGame.Core
             _combatSystem = new CombatSystem();
             _pickupSystem = new PickupSystem(() => _playerModel.Position);
             _spawnTelegraphSystem = new SpawnTelegraphSystem();
+            // VfxSystem usa el ObjectPool ya creado en InitializePools (corre antes en Awake).
+            // Se recrea por run junto a los demás sistemas; ReturnAllActive lo limpia antes.
+            _vfxSystem = new VfxSystem(_objectPool);
         }
 
         private void InitializePools()
         {
             _objectPool = new ObjectPool();
-            _objectPool.RegisterPrefab("Enemy", _enemyPrefab);
-            _objectPool.RegisterPrefab("Projectile", _projectilePrefab);
+            _objectPool.RegisterPrefab("Enemy", _prefabs.EnemyPrefab);
+            _objectPool.RegisterPrefab("Projectile", _prefabs.ProjectilePrefab);
 
             // Pickup: opcional. Si no hay prefab, no se registra la key y el spawn degrada
             // con warning en el orquestador (sin crashear).
-            if (_pickupPrefab != null)
-                _objectPool.RegisterPrefab("Pickup", _pickupPrefab);
+            if (_prefabs.PickupPrefab != null)
+                _objectPool.RegisterPrefab("Pickup", _prefabs.PickupPrefab);
             else
-                Debug.LogWarning("GameManager: _pickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
+                Debug.LogWarning("GameManager: PickupPrefab sin asignar. Los drops no se mostrarán (gameplay sigue funcionando).");
+
+            // ImpactVFX: opcional. Si no hay prefab, no se registra la key y SpawnImpact
+            // degrada (view null) sin crashear. Warning único en init, nunca por frame.
+            if (_prefabs.ImpactVfxPrefab != null)
+                _objectPool.RegisterPrefab("ImpactVFX", _prefabs.ImpactVfxPrefab);
+            else
+                Debug.LogWarning("GameManager: ImpactVfxPrefab sin asignar. Los VFX de impacto no se mostrarán (gameplay sigue funcionando).");
+
+            // ImpactVFX por arma (Bloque 1): registra el VFX propio del arma base con su key
+            // derivada ("ImpactVFX_<WeaponId>"), sin sacar el fallback global "ImpactVFX".
+            // Las armas temporales de pickup se registran lazy en FireProjectile (no hay una
+            // lista de todas las WeaponData accesible sin escanear el árbol de drops).
+            RegisterWeaponImpactVfx(_baseWeapon);
 
             // SpawnMarker (telegraph): opcional, mismo criterio que Pickup. Reusa VfxPrewarm
             // del PoolConfig (campo que estaba reservado y sin uso hasta ahora).
-            if (_spawnMarkerPrefab != null)
-                _objectPool.RegisterPrefab("SpawnMarker", _spawnMarkerPrefab);
+            if (_prefabs.SpawnMarkerPrefab != null)
+                _objectPool.RegisterPrefab("SpawnMarker", _prefabs.SpawnMarkerPrefab);
             else
-                Debug.LogWarning("GameManager: _spawnMarkerPrefab sin asignar. El telegraph de spawn no se mostrará (los enemigos siguen spawneando).");
+                Debug.LogWarning("GameManager: _prefabs.SpawnMarkerPrefab sin asignar. El telegraph de spawn no se mostrará (los enemigos siguen spawneando).");
 
             if (_poolConfig == null)
             {
@@ -232,10 +254,29 @@ namespace OptimizationGame.Core
 
             _objectPool.Prewarm("Enemy", _poolConfig.EnemyPrewarm);
             _objectPool.Prewarm("Projectile", _poolConfig.ProjectilePrewarm);
-            if (_pickupPrefab != null)
+            if (_prefabs.PickupPrefab != null)
                 _objectPool.Prewarm("Pickup", _poolConfig.PickupPrewarm);
-            if (_spawnMarkerPrefab != null)
+            if (_prefabs.SpawnMarkerPrefab != null)
                 _objectPool.Prewarm("SpawnMarker", _poolConfig.VfxPrewarm);
+            if (_prefabs.ImpactVfxPrefab != null)
+                _objectPool.Prewarm("ImpactVFX", _poolConfig.VfxPrewarm);
+        }
+
+        // Registra el ImpactVFX propio de un arma (si define prefab + WeaponId) con la MISMA
+        // key que deriva PlayerSystem.ResolveImpactVfxKey ("ImpactVFX_<WeaponId>"). Idempotente
+        // (RegisterPrefab no pisa) y null-safe. Prewarma con VfxPrewarm solo si es un registro
+        // nuevo y hay PoolConfig, para no re-crecer una pool ya prewarmeada. No toca el fallback
+        // global "ImpactVFX". Reutilizable para futuras armas (temporales) sin acoplar de más.
+        private void RegisterWeaponImpactVfx(WeaponData weapon)
+        {
+            if (weapon == null || weapon.ImpactVfxPrefab == null || string.IsNullOrEmpty(weapon.WeaponId))
+                return;
+
+            string key = "ImpactVFX_" + weapon.WeaponId;
+            bool alreadyRegistered = _objectPool.HasPrefab(key);
+            _objectPool.RegisterPrefab(key, weapon.ImpactVfxPrefab);
+            if (!alreadyRegistered && _poolConfig != null)
+                _objectPool.Prewarm(key, _poolConfig.VfxPrewarm);
         }
 
         // Construye el sistema puro que ejecuta la lógica recurrente. Recibe las MISMAS
@@ -277,7 +318,8 @@ namespace OptimizationGame.Core
                 (current, max) => HealthChanged?.Invoke(current, max),
                 (waveName, index, total, isFinal) => WaveChanged?.Invoke(waveName, index, total, isFinal),
                 enemiesLeft => EnemiesLeftChanged?.Invoke(enemiesLeft),
-                EndGameplay);
+                EndGameplay,
+                (pos, key) => _vfxSystem?.SpawnImpact(pos, key));
         }
 
         // InputReader vive TODA la escena: se crea y registra UNA sola vez (Awake).
@@ -307,6 +349,7 @@ namespace OptimizationGame.Core
             // Telegraph antes del orquestador: tickea el countdown/titileo de las marcas y
             // el orquestador consume ReadyMarkers en el mismo frame (igual que PickupSystem).
             _updateManager.Register(_spawnTelegraphSystem);
+            _updateManager.Register(_vfxSystem);
             _updateManager.Register(_orchestrator);
         }
 
@@ -321,6 +364,7 @@ namespace OptimizationGame.Core
             _updateManager.Unregister(_waveSystem);
             _updateManager.Unregister(_pickupSystem);
             _updateManager.Unregister(_spawnTelegraphSystem);
+            _updateManager.Unregister(_vfxSystem);
             _updateManager.Unregister(_orchestrator);
         }
 
@@ -346,6 +390,10 @@ namespace OptimizationGame.Core
             foreach (var kvp in _spawnMarkerViews)
                 _objectPool.Despawn("SpawnMarker", kvp.Value);
             _spawnMarkerViews.Clear();
+            // VFX activos al pool: corre con la instancia ACTUAL de _vfxSystem, antes de que
+            // RebuildRunSystems la reemplace. Cubre Restart y ReturnToMainMenu (ambos pasan
+            // por acá). Evita VFX activos acumulados y views perdidas del pool entre runs.
+            _vfxSystem?.ReturnAllActive();
         }
 
         // Reconstruye los sistemas puros de gameplay desde cero para una run nueva.
@@ -365,6 +413,10 @@ namespace OptimizationGame.Core
         // _playerModel/_playerSystem (InputReader sigue tickeando y necesita ambos válidos).
         private void StartRun()
         {
+            // Reactivar player + escenario ANTES de resetear posición/spawn y arrancar.
+            // Idempotente: en Restart ya están activos, así que esto no los apaga.
+            SetGameplaySceneActive(true);
+
             CleanupRunEntities();
             RebuildRunSystems();
 
@@ -453,12 +505,11 @@ namespace OptimizationGame.Core
         }
 
         /// <summary>
-        /// Placeholder seguro de Options. Todavía no hay menú real de opciones; solo
-        /// deja traza para verificar el wiring del botón. La invoca UIManager.
+        /// Placeholder seguro de Options. Todavía no hay menú real de opciones.
+        /// La invoca UIManager desde el botón Options.
         /// </summary>
         public void OpenOptions()
         {
-            Debug.Log("GameManager: OpenOptions() (placeholder, sin menú de opciones aún).");
         }
 
         /// <summary>
@@ -472,6 +523,8 @@ namespace OptimizationGame.Core
         public void ReturnToMainMenu()
         {
             CleanupRunEntities();
+            // Vuelta al Menu: player y escenario se apagan de nuevo (no hacen falta hasta Start).
+            SetGameplaySceneActive(false);
             _gameplayEnded = false;
             _gameState = GameState.Menu;
             _updateManager.SetPaused(true);
@@ -568,6 +621,18 @@ namespace OptimizationGame.Core
                 _objectPool.RegisterPrefab(projectile.PoolKey, weaponPrefab);
             }
 
+            // ImpactVFX por arma: registro lazy simétrico al del proyectil. Cubre armas
+            // temporales de pickup (el arma base ya se registró/prewarmeó en InitializePools).
+            // Si la key es específica y aún falta, se registra el prefab del arma activa.
+            // Es cosmético: si el prefab faltara, NO se aborta el disparo (a diferencia del
+            // proyectil); el impacto simplemente no muestra VFX (view null, sin crash).
+            if (projectile.ImpactVfxPoolKey != "ImpactVFX" && !_objectPool.HasPrefab(projectile.ImpactVfxPoolKey))
+            {
+                var impactPrefab = _playerSystem.ActiveImpactVfxPrefab;
+                if (impactPrefab != null)
+                    _objectPool.RegisterPrefab(projectile.ImpactVfxPoolKey, impactPrefab);
+            }
+
             var view = _objectPool.Spawn(projectile.PoolKey, projectile.Position);
             if (view != null)
             {
@@ -599,5 +664,43 @@ namespace OptimizationGame.Core
         }
 
         public PlayerModel GetPlayerModel() => _playerModel;
+
+        // Agrupa los prefabs pooled en un solo campo serializado. Cuenta como UN campo
+        // expuesto de GameManager (respeta el límite <=10) pero expone N referencias en el
+        // Inspector.
+        [Serializable]
+        private class PrefabReferences
+        {
+            public GameObject EnemyPrefab;
+            public GameObject ProjectilePrefab;
+            // Opcional: si queda sin asignar, los drops no se muestran (gameplay sigue).
+            public GameObject PickupPrefab;
+            // Opcional: si queda sin asignar, los VFX de impacto no se muestran (gameplay sigue).
+            public GameObject ImpactVfxPrefab;
+            // Opcional: marca de spawn (telegraph). Si queda sin asignar, el enemigo igual
+            // spawnea; solo falta el aviso visual (warning en InitializePools).
+            public GameObject SpawnMarkerPrefab;
+        }
+
+        // Referencias de escena agrupadas en un solo campo serializado (respeta <=10).
+        // PlayerRoot y RoomRoot se apagan/encienden según Menu vs Playing; AudioManager
+        // es el reproductor de audio de la escena (no se togglea).
+        [Serializable]
+        private class GameplaySceneReferences
+        {
+            public GameObject PlayerRoot;
+            public GameObject RoomRoot;
+            public AudioManager AudioManager;
+        }
+
+        // Enciende/apaga los roots visuales de gameplay. Null-safe: si un root no está
+        // asignado, degrada en silencio (sin crash, sin log por frame, sin bloquear Start).
+        private void SetGameplaySceneActive(bool active)
+        {
+            if (_sceneRefs.PlayerRoot != null)
+                _sceneRefs.PlayerRoot.SetActive(active);
+            if (_sceneRefs.RoomRoot != null)
+                _sceneRefs.RoomRoot.SetActive(active);
+        }
     }
 }

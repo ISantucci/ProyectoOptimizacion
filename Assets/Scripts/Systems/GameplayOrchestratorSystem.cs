@@ -85,6 +85,10 @@ namespace OptimizationGame.Systems
         // Radio de recogida del pickup (XZ).
         private const float PickupCollectRadius = 1.5f;
 
+        // Altura sobre el piso a la que se eleva el pickup al spawnear, para que el sprite
+        // no quede coplanar con el suelo (oclusión/z-fighting). No afecta la recolección (XZ).
+        private const float PickupSpawnHeightOffset = 0.5f;
+
         // DropSystem: clase pura, stateless. Instanciado aquí para no tocar el wiring de
         // GameManager. NO es ITickable; solo se invoca puntualmente al morir un enemigo.
         private readonly DropSystem _dropSystem = new DropSystem();
@@ -95,6 +99,11 @@ namespace OptimizationGame.Systems
         private readonly Action<int> _raiseEnemiesLeftChanged;
         // bool = victory (true) / defeat (false). GameManager emite el evento de UI según el flag.
         private readonly Action<bool> _endGameplay;
+
+        // Dispara el VFX de impacto pooled en una posición, con la key del proyectil (VFX propio
+        // del arma o fallback "ImpactVFX"), sin acoplar el orquestador al tipo VfxSystem.
+        // Null-safe: si es null (o el pool no tiene la key), no pasa nada.
+        private readonly Action<Vector3, string> _spawnImpactVfx;
 
         // Cooldown de ataque por enemigo (el timer vive en cada EnemyModel).
         private const float EnemyDamageInterval = 1f;
@@ -132,7 +141,8 @@ namespace OptimizationGame.Systems
             Action<float, float> raiseHealthChanged,
             Action<string, int, int, bool> raiseWaveChanged,
             Action<int> raiseEnemiesLeftChanged,
-            Action<bool> endGameplay)
+            Action<bool> endGameplay,
+            Action<Vector3, string> spawnImpactVfx)
         {
             _playerModel = playerModel;
             _enemySystem = enemySystem;
@@ -159,6 +169,7 @@ namespace OptimizationGame.Systems
             _raiseWaveChanged = raiseWaveChanged;
             _raiseEnemiesLeftChanged = raiseEnemiesLeftChanged;
             _endGameplay = endGameplay;
+            _spawnImpactVfx = spawnImpactVfx;
         }
 
         public void Tick(float deltaTime)
@@ -396,6 +407,12 @@ namespace OptimizationGame.Systems
                                 enemy);
                         }
 
+                        // VFX de impacto pooled en el punto de choque, con la key del arma que
+                        // viaja en el proyectil (o fallback "ImpactVFX"). Solo en impacto real
+                        // (acá projectileHit pasa a true), NUNCA por HasReachedMaxDistance.
+                        // Antes del despawn del proyectil. Null-safe.
+                        _spawnImpactVfx?.Invoke(projectile.Position, projectile.ImpactVfxPoolKey);
+
                         projectileHit = true;
                         break;
                     }
@@ -467,7 +484,15 @@ namespace OptimizationGame.Systems
             if (data == null || _pickupSystem == null)
                 return;
 
-            var view = _objectPool.Spawn("Pickup", position);
+            // Offset vertical: el pickup se dropea en enemy.Position (Y ≈ 0, a ras del piso).
+            // EntityView.SetPosition fija la posición absoluta y pisa el offset local del prefab,
+            // dejando el sprite plano coplanar con el suelo (oclusión/z-fighting). Lo elevamos
+            // para que quede visible sobre el piso. Solo afecta la posición de spawn; la
+            // recolección de PickupSystem es por distancia XZ (ignora Y), así que no cambia.
+            Vector3 pickupPosition = position;
+            pickupPosition.y += PickupSpawnHeightOffset;
+
+            var view = _objectPool.Spawn("Pickup", pickupPosition);
             if (view == null)
             {
                 if (!_loggedMissingPickupPool)
@@ -486,7 +511,7 @@ namespace OptimizationGame.Systems
             // Garantizar que arranca visible.
             view.SetVisible(true);
 
-            var model = new PickupModel(_nextPickupId++, data, position, PickupCollectRadius);
+            var model = new PickupModel(_nextPickupId++, data, pickupPosition, PickupCollectRadius);
             _pickupViews[model] = view;
             _pickupSystem.AddPickup(model);
         }
@@ -636,7 +661,6 @@ namespace OptimizationGame.Systems
             {
                 _gameState = GameState.Defeat;
                 _endGameplay?.Invoke(false);
-                Debug.Log("GAME OVER - PLAYER DEFEATED");
                 return;
             }
 
@@ -653,7 +677,6 @@ namespace OptimizationGame.Systems
                 {
                     _gameState = GameState.Victory;
                     _endGameplay?.Invoke(true);
-                    Debug.Log("VICTORY - ALL ROOMS COMPLETED");
                 }
             }
         }
