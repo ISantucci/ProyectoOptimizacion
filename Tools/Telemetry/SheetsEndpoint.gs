@@ -13,6 +13,8 @@
  * Solo acepta los 9 eventos del plan; todo lo demás se descarta.
  */
 const TOKEN = '07ce622849e95e6b09329e76';
+// Id fijo: una aplicación web no tiene planilla "activa" garantizada.
+const SPREADSHEET_ID = '15WlBi-vDPnc1QnOh44j786iCBg6amONAM9hISj8Bc8M';
 const SHEET_EVENTS = 'eventos';
 const SHEET_SUMMARY = 'resumen';
 const MAX_BATCH = 200;
@@ -29,7 +31,7 @@ const HEADER = BASE.concat(PARAMS);
 /** Crea las hojas y el tablero de lectura. Se puede correr de nuevo sin perder datos. */
 function setup() {
   eventsSheet_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let s = ss.getSheetByName(SHEET_SUMMARY);
   if (!s) s = ss.insertSheet(SHEET_SUMMARY);
   s.clear();
@@ -106,7 +108,7 @@ function doGet() {
 }
 
 function eventsSheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(SHEET_EVENTS);
   if (!sheet) sheet = ss.insertSheet(SHEET_EVENTS);
   if (sheet.getLastRow() === 0) {

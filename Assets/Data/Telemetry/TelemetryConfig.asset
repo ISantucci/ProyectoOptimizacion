@@ -16,7 +16,7 @@ MonoBehaviour:
   _unityAnalyticsEnabled: 1
   _ugsEnvironment: 
   _sheetsEnabled: 1
-  _sheetsEndpointUrl: 
+  _sheetsEndpointUrl: https://script.google.com/macros/s/AKfycbwbGc_H631R34MQII5qtTvGXmL-OAIReo5kOQxZQ-gZZVAJoJGqjyszvt7w1peNEW86/exec
   _sheetsToken: 07ce622849e95e6b09329e76
   _consentWhenUnset: 1
   _sendFromEditor: 0
