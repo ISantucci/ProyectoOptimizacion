@@ -1,14 +1,14 @@
-# ProyectoOptimizacion — instrucciones para agentes
+# Capsule Survivor — instrucciones para agentes
 
-Arena survivor 3D cenital, inspirado en Brotato (en el menú dice *Arena Survivor*). Unity **6000.3.12f1**, URP 17.3, Input System, TextMesh Pro. Destino: **build Web en itch.io**. Rama de trabajo: **`preproduction`**.
+**Capsule Survivor**: arena survivor 3D cenital inspirado en Brotato, hecho de cápsulas y primitivas. El repo y su carpeta todavía se llaman `ProyectoOptimizacion`. Unity **6000.3.12f1**, URP 17.3, Input System, TextMesh Pro. Destino: **build Web en itch.io**. Rama de trabajo: **`preproduction`**.
 
 ## Dónde vive la producción
 
 El juego está en este repo; **la producción vive en Vaultrum**:
 
 ```txt
-C:\Users\ControlEquipos\Documents\GitHub\Vaultrum\06_Proyectos\ProyectoOptimizacion\
-  ProyectoOptimizacion.md      el cuaderno: estado, decisiones, pendientes. Leelo primero.
+C:\Users\ControlEquipos\Documents\GitHub\Vaultrum\06_Proyectos\CapsuleSurvivor\
+  CapsuleSurvivor.md           el cuaderno: estado, decisiones, pendientes. Leelo primero.
   01_Produccion/               TL y RQ (qué hay que hacer y su criterio de cierre)
   05_Programacion/             SOL y EJ (cómo se resolvió y qué se ejecutó)
   06_Calidad/ 08_Metricas/ ... el resto de las áreas, si existen
@@ -16,13 +16,19 @@ C:\Users\ControlEquipos\Documents\GitHub\Vaultrum\06_Proyectos\ProyectoOptimizac
 
 - Antes de tocar código, leé el cuaderno y el `RQ` que nombra la orden.
 - Cada trabajo deja su artefacto según la skill del área (`Vaultrum\02_Agencia\Area <área>\Skills\<skill>\SKILL.md`): programación → `SOL` + `EJ`; calidad → `QA`.
-- **Nunca escribas en las capas de sistema del vault (`01_` a `05_`).** Solo en `06_Proyectos\ProyectoOptimizacion\`.
+- **Nunca escribas en las capas de sistema del vault (`01_` a `05_`).** Solo en `06_Proyectos\CapsuleSurvivor\`.
 
 ## Tablero
 
-Jira **PO** (https://santuccignacio.atlassian.net/jira/software/projects/PO/boards/34), con la forma de FHZ. Épica `PO-1` = `TL-001`, `PO-2` = `TL-002`; tareas por área (etiquetas `programacion`, `uiux`, `arte`, `calidad`, `metricas`, `gamedesign`, `produccion`, `owner`); errores como `BUG-NNN`. Lo etiquetado `owner` no lo hace un agente.
+Jira **CS** "Capsule Survivor" (https://santuccignacio.atlassian.net/jira/software/projects/CS/boards/34), con la forma de FHZ. Épica `CS-1` = `TL-001`, `CS-2` = `TL-002`; tareas por área (etiquetas `programacion`, `uiux`, `arte`, `calidad`, `metricas`, `gamedesign`, `produccion`, `owner`); errores como `BUG-NNN`. Lo etiquetado `owner` no lo hace un agente.
 
-Estados: Por hacer → En curso → En revisión → Finalizada. Para moverlos usá el **id** de transición (los nombres quedaron cruzados): `11` Por hacer · `21` En curso · `31` En revisión · `41` Finalizada. Una tarea de agente termina en **En revisión**; Finalizada la pone el owner o el `QA`. Si no tenés las herramientas de Atlassian, cerrá tu respuesta con `Tablero: PO-n → <estado>`.
+Estados: Por hacer → En curso → En revisión → Finalizada. Para moverlos usá el **id** de transición (los nombres quedaron cruzados): `11` Por hacer · `21` En curso · `31` En revisión · `41` Finalizada. Una tarea de agente termina en **En revisión**; Finalizada la pone el owner o el `QA`. Si no tenés las herramientas de Atlassian, cerrá tu respuesta con `Tablero: CS-n → <estado>`.
+
+## Estética cápsula y rendimiento primero (decisión del owner, 2026-11-20)
+
+- **No se importan modelos** (`.fbx`, `.obj`, `.blend`, packs de assets). Player, enemigos, armas, proyectiles, pickups y arena son primitivas de Unity (cápsula, esfera, cubo, cilindro). Cada rol se distingue por forma y escala además del color.
+- **Rendimiento primero.** Entre un look y su costo, gana el costo: materiales URP compartidos con GPU instancing, sin texturas salvo UI, luz en tiempo real sin lightmaps, nada de `Animator` para primitivas (el feedback es escala, color y flash), cero asignaciones de memoria por frame en el loop de juego.
+- Lo que hay hoy de Synty, minotaur1, civilian_girl y Nokobot **sale** (`RQ-001.8`): no lo uses en nada nuevo.
 
 ## Reglas de arquitectura (del TP, no se negocian)
 
@@ -50,4 +56,4 @@ Estados: Por hacer → En curso → En revisión → Finalizada. Para moverlos u
 
 ## Cómo cerrar cada orden
 
-Al final, en pocas líneas: qué hiciste · archivos tocados · cómo lo verificaste (con números) · qué quedó pendiente · `Tablero: PO-n → <estado>`. Si algo no se pudo, decilo como **FALLO** con el motivo, no como nota al pie.
+Al final, en pocas líneas: qué hiciste · archivos tocados · cómo lo verificaste (con números) · qué quedó pendiente · `Tablero: CS-n → <estado>`. Si algo no se pudo, decilo como **FALLO** con el motivo, no como nota al pie.
